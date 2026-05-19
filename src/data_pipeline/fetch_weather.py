@@ -1,89 +1,121 @@
 """
-fetch_weather.py - Thu thập dữ liệu thời tiết từ Open-Meteo API
+fetch_weather.py - Thu thap du lieu tu WeatherAPI.com
+Nguon chinh cua du an DSS301 Drone Scheduler
+
+Free tier: 1 trieu calls/thang, forecast 3 ngay
+Docs: https://www.weatherapi.com/docs/
 """
+import os
 import requests
 import pandas as pd
 import argparse
 from datetime import datetime
 from pathlib import Path
+from dotenv import load_dotenv
+
+load_dotenv(Path(__file__).parent.parent.parent / ".env")
+
+API_KEY  = os.getenv("WEATHERAPI_KEY")
+BASE_URL = "http://api.weatherapi.com/v1/forecast.json"
 
 FARM_LOCATIONS = [
-    {"name": "Dong Thap",  "latitude": 10.4939, "longitude": 105.6882},
-    {"name": "Long An",    "latitude": 10.5360, "longitude": 106.4052},
-    {"name": "Tien Giang", "latitude": 10.3598, "longitude": 106.3567},
-    {"name": "An Giang",   "latitude": 10.5216, "longitude": 105.1259},
-    {"name": "Can Tho",    "latitude": 10.0341, "longitude": 105.7878},
+    {"name": "Dong Thap",   "latitude": 10.4939, "longitude": 105.6882},
+    {"name": "Long An",     "latitude": 10.5360, "longitude": 106.4052},
+    {"name": "Tien Giang",  "latitude": 10.3598, "longitude": 106.3567},
+    {"name": "An Giang",    "latitude": 10.5216, "longitude": 105.1259},
+    {"name": "Can Tho",     "latitude": 10.0341, "longitude": 105.7878},
+    {"name": "Ho Chi Minh", "latitude": 10.7769, "longitude": 106.7009},
+    {"name": "Ha Noi",      "latitude": 21.0285, "longitude": 105.8542},
 ]
 
-OPEN_METEO_URL = "https://api.open-meteo.com/v1/forecast"
-
-HOURLY_FIELDS = [
-    "temperature_2m", "relative_humidity_2m",
-    "precipitation_probability", "precipitation",
-    "cloud_cover", "visibility",
-    "wind_speed_10m", "wind_gusts_10m", "weather_code",
-]
-
-WMO_DESCRIPTIONS = {
-    0: "Troi quang", 1: "Chu yeu quang", 2: "Nhieu may mot phan",
-    3: "Nhieu may", 45: "Suong mu", 48: "Suong mu co bang",
-    51: "Mua phun nhe", 53: "Mua phun vua", 55: "Mua phun day",
-    61: "Mua nhe", 63: "Mua vua", 65: "Mua lon",
-    80: "Mua rao nhe", 81: "Mua rao vua", 82: "Mua rao manh",
-    95: "Dong", 99: "Dong kem mua da",
+UNSAFE_CONDITION_CODES = {
+    1087, 1273, 1276, 1279, 1282,
+    1192, 1195, 1201, 1243, 1246,
+    1135, 1147,
 }
 
-def fetch_one_location(location, forecast_days=7):
+
+def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
+    if not API_KEY:
+        raise EnvironmentError(
+            "Thieu WEATHERAPI_KEY trong .env\n"
+            "  -> Dang ky tai weatherapi.com roi them key vao .env"
+        )
+
     params = {
-        "latitude": location["latitude"],
-        "longitude": location["longitude"],
-        "hourly": ",".join(HOURLY_FIELDS),
-        "forecast_days": forecast_days,
-        "timezone": "Asia/Bangkok",
+        "key":    API_KEY,
+        "q":      f"{location['latitude']},{location['longitude']}",
+        "days":   min(days, 3),
+        "aqi":    "no",
+        "alerts": "no",
     }
+
     try:
-        response = requests.get(OPEN_METEO_URL, params=params, timeout=15)
-        response.raise_for_status()
+        resp = requests.get(BASE_URL, params=params, timeout=15)
+        resp.raise_for_status()
+    except requests.exceptions.HTTPError as e:
+        print(f"  [HTTP ERROR] {location['name']}: {e}")
+        return pd.DataFrame()
     except Exception as e:
         print(f"  [ERROR] {location['name']}: {e}")
         return pd.DataFrame()
 
-    raw = response.json()
-    hourly = raw.get("hourly", {})
-    if not hourly:
+    data = resp.json()
+    rows = []
+
+    for day in data.get("forecast", {}).get("forecastday", []):
+        for hour in day.get("hour", []):
+            code = hour.get("condition", {}).get("code", 0)
+            rows.append({
+                "location_name":             location["name"],
+                "latitude":                  location["latitude"],
+                "longitude":                 location["longitude"],
+                "timestamp":                 pd.to_datetime(hour["time"]),
+                "source":                    "WeatherAPI",
+                "temperature_2m":            hour.get("temp_c"),
+                "relative_humidity_2m":      hour.get("humidity"),
+                "precipitation_probability": hour.get("chance_of_rain"),
+                "precipitation":             hour.get("precip_mm"),
+                "cloud_cover":               hour.get("cloud"),
+                "visibility":                hour.get("vis_km", 0) * 1000,
+                "wind_speed_10m":            hour.get("wind_kph"),
+                "wind_gusts_10m":            hour.get("gust_kph"),
+                "weather_code":              code,
+                "weather_description":       hour.get("condition", {}).get("text", ""),
+            })
+
+    if not rows:
         return pd.DataFrame()
 
-    df = pd.DataFrame(hourly)
-    df.rename(columns={"time": "timestamp"}, inplace=True)
-    df["timestamp"] = pd.to_datetime(df["timestamp"])
-    df.insert(0, "location_name", location["name"])
-    df.insert(1, "latitude",      location["latitude"])
-    df.insert(2, "longitude",     location["longitude"])
-    df["weather_description"] = df["weather_code"].map(WMO_DESCRIPTIONS).fillna("Khong xac dinh")
-    return df
+    return pd.DataFrame(rows)
 
-def fetch_all_locations(locations, forecast_days=7):
+
+def fetch_all_locations(locations: list, forecast_days: int = 3) -> pd.DataFrame:
     all_dfs = []
-    print(f"\n{'='*50}")
-    print(f"  Open-Meteo Fetcher — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"  {forecast_days} ngay | {len(locations)} dia diem")
-    print(f"{'='*50}")
+    print(f"\n{'='*52}")
+    print(f"  WeatherAPI Fetcher — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"  {min(forecast_days,3)} ngay | {len(locations)} dia diem")
+    print(f"{'='*52}")
+
     for loc in locations:
         print(f"\n-> {loc['name']} ({loc['latitude']}, {loc['longitude']})")
-        df = fetch_one_location(loc, forecast_days)
+        df = fetch_one_location(loc, days=forecast_days)
         if not df.empty:
             all_dfs.append(df)
             print(f"  OK: {len(df)} ban ghi")
         else:
             print(f"  FAIL: khong lay duoc du lieu")
+
     if not all_dfs:
         print("\n[WARN] Khong co du lieu nao!")
         return pd.DataFrame()
+
     combined = pd.concat(all_dfs, ignore_index=True)
     print(f"\n  TONG: {len(combined)} ban ghi tu {len(all_dfs)} dia diem\n")
     return combined
 
-def save_raw(df, output_dir="data/raw"):
+
+def save_raw(df: pd.DataFrame, output_dir: str = "data/raw") -> str:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M")
     filename = f"{output_dir}/weather_raw_{ts}.csv"
@@ -91,9 +123,10 @@ def save_raw(df, output_dir="data/raw"):
     print(f"  Saved: {filename}")
     return filename
 
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--days", type=int, default=7)
+    parser.add_argument("--days", type=int, default=3)
     parser.add_argument("--save", action="store_true")
     args = parser.parse_args()
     df = fetch_all_locations(FARM_LOCATIONS, forecast_days=args.days)
