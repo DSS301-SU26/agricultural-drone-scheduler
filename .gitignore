@@ -8,3 +8,4 @@ data/clean/
 .DS_Store
 src/models/*.pkl
 src/models/*.joblib
+.idea/
