@@ -19,7 +19,7 @@ def main():
     print("#"*52)
 
     # Buoc 1: Fetch
-    print("\n[1/3] Thu thap du lieu tu Open-Meteo...")
+    print("\n[1/3] Thu thap du lieu tu WeatherAPI")
     df = fetch_all_locations(FARM_LOCATIONS, forecast_days=args.days)
     if df.empty:
         print("FAIL: Khong lay duoc du lieu. Kiem tra internet.")
