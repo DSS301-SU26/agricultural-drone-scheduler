@@ -1,10 +1,3 @@
-"""
-fetch_weather.py - Thu thap du lieu tu WeatherAPI.com
-Nguon chinh cua du an DSS301 Drone Scheduler
-
-Free tier: 1 trieu calls/thang, forecast 3 ngay
-Docs: https://www.weatherapi.com/docs/
-"""
 import os
 import requests
 import pandas as pd
