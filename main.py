@@ -24,3 +24,4 @@ if __name__ == "__main__":
     load_to_supabase(str(clean_files[-1]))
 
     print("HOAN THANH!")
+# //test
