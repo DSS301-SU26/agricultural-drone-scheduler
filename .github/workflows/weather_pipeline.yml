@@ -26,3 +26,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python src/run_pipeline.py
+
+      - name: Lữu trữ file Raw và Clean (Upload Artifacts)
+        uses: actions/upload-artifact@v4
+        with:
+            name: weather-data-${{ github.run_id }} # Tên thư mục tải về
+            path: |
+              src/data/raw/*.csv
+              src/data/clean/*.csv
+            retention-days: 30 # (Tùy chọn) Số ngày GitHub sẽ lưu trữ file này trước khi tự động xóa. Bạn có thể chỉnh sửa số này.
