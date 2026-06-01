@@ -16,7 +16,12 @@ SAFETY_THRESHOLDS = {
     "cloud_cover": 80.0,
     "visibility": 1000.0,
 }
-UNSAFE_WEATHER_CODES = {45, 48, 55, 63, 65, 71, 80, 81, 82, 95, 99}
+# WeatherAPI condition codes that are unsafe for agricultural drone flights.
+UNSAFE_WEATHER_CODES = {
+    1087, 1273, 1276, 1279, 1282,
+    1192, 1195, 1201, 1243, 1246,
+    1135, 1147,
+}
 FLY_HOUR_START = 6
 FLY_HOUR_END   = 18
 
@@ -57,16 +62,16 @@ def run_pipeline(raw_filepath, save=True):
         "ok_rain_prob": df["precipitation_probability"] <= SAFETY_THRESHOLDS["precipitation_probability"],
         "ok_cloud":     df["cloud_cover"]               <= SAFETY_THRESHOLDS["cloud_cover"],
         "ok_vis":       df["visibility"]                >= SAFETY_THRESHOLDS["visibility"],
-        "ok_wmo":       ~df["weather_code"].isin(UNSAFE_WEATHER_CODES),
+        "ok_weather":   ~df["weather_code"].isin(UNSAFE_WEATHER_CODES),
     }
     weights = {"ok_wind":0.30,"ok_gust":0.20,"ok_rain":0.20,
-               "ok_rain_prob":0.10,"ok_cloud":0.10,"ok_vis":0.05,"ok_wmo":0.05}
+               "ok_rain_prob":0.10,"ok_cloud":0.10,"ok_vis":0.05,"ok_weather":0.05}
 
     for k, v in conds.items():
         df[k] = v
 
     df["flyability_score"] = sum(df[c].astype(float)*w for c,w in weights.items()).round(4)
-    df["fly_label"]  = df[["ok_wind","ok_gust","ok_rain","ok_wmo"]].all(axis=1).map({True:"FLY",False:"NO_FLY"})
+    df["fly_label"]  = df[["ok_wind","ok_gust","ok_rain","ok_weather"]].all(axis=1).map({True:"FLY",False:"NO_FLY"})
     df["risk_level"] = pd.cut(df["flyability_score"],bins=[0,0.4,0.7,1.0],
                               labels=["HIGH","MEDIUM","LOW"],include_lowest=True).astype(str)
 

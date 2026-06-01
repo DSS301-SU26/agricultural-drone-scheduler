@@ -1,0 +1,5 @@
+model,accuracy,macro_precision,macro_recall,macro_f1,weighted_f1
+decision_tree,0.9841,0.9615,0.9906,0.9744,0.9846
+logistic_regression,0.881,0.8865,0.7665,0.8013,0.8704
+random_forest,0.7698,0.3971,0.4858,0.4351,0.6864
+baseline_majority,0.373,0.0933,0.25,0.1358,0.2027
