@@ -1,0 +1,10 @@
+{
+  "evaluated_location_days": 30,
+  "baseline_risky_operations": 24,
+  "dss_risky_operations": 3,
+  "risk_reduction_pct": 87.5,
+  "baseline_waste_liters": 1480.0,
+  "dss_waste_liters": 80.0,
+  "waste_reduction_pct": 94.59,
+  "interpretation": "Simulation upper bound only: fixed-noon baseline versus best available DSS slot. Do not present as measured field performance."
+}

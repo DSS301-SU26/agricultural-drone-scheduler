@@ -1,0 +1,11 @@
+{
+  "strategy": "GroupShuffleSplit grouped by timestamp",
+  "input_rows": 504,
+  "model_rows_after_dedup": 504,
+  "duplicate_location_timestamp_rows_removed": 0,
+  "unique_timestamps": 72,
+  "train_rows": 378,
+  "test_rows": 126,
+  "train_unique_timestamps": 54,
+  "test_unique_timestamps": 18
+}

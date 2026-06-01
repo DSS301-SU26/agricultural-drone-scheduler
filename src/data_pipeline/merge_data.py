@@ -22,6 +22,15 @@ def main():
     for file in csv_files:
         df_weather_list.append(pd.read_csv(file))
     df_weather = pd.concat(df_weather_list, ignore_index=True)
+    before_dedup = len(df_weather)
+    df_weather = df_weather.drop_duplicates(
+        subset=["location_name", "timestamp"],
+        keep="last",
+    )
+    print(
+        f"   -> Loại {before_dedup - len(df_weather)} dòng forecast trùng "
+        "(location_name, timestamp)."
+    )
 
     # Tạo cột 'match_id' để ghép (vì lúc lưu ảnh ta đã đổi dấu : thành dấu -)
     df_weather['match_id'] = df_weather['timestamp'].astype(str).str.replace(":", "-").str.replace(" ", "_")

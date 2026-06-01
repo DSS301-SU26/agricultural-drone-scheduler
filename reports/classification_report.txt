@@ -1,0 +1,10 @@
+                    precision    recall  f1-score   support
+
+      DELAY_FLIGHT       1.00      1.00      1.00        15
+        LOCK_SPRAY       0.85      1.00      0.92        11
+RETURN_TO_CHARGING       1.00      1.00      1.00        47
+          TAKE_OFF       1.00      0.96      0.98        53
+
+          accuracy                           0.98       126
+         macro avg       0.96      0.99      0.97       126
+      weighted avg       0.99      0.98      0.98       126
