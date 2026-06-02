@@ -1,4 +1,9 @@
 {
+  "scope": "best_slot_inside_training_snapshot_not_live_forecast",
+  "dataset_time_range": {
+    "min_timestamp": "2026-05-25 06:00:00",
+    "max_timestamp": "2026-05-30 17:00:00"
+  },
   "location_name": "Dong Thap",
   "timestamp": "2026-05-29 06:00:00",
   "flyability_score": 1.0,

@@ -44,6 +44,16 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATASET = ROOT / "src" / "data" / "final_training_data.csv"
 MODEL_DIR = ROOT / "models"
 REPORT_DIR = ROOT / "reports"
+LEGACY_BEST_SLOT_REPORT = REPORT_DIR / "best_slot.json"
+TRAINING_SNAPSHOT_BEST_SLOT_REPORT = REPORT_DIR / "training_snapshot_best_slot.json"
+
+
+def build_dataset_time_range(df: pd.DataFrame) -> dict[str, str]:
+    timestamps = pd.to_datetime(df["timestamp"])
+    return {
+        "min_timestamp": timestamps.min().strftime("%Y-%m-%d %H:%M:%S"),
+        "max_timestamp": timestamps.max().strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
 
 def build_feature_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
@@ -139,6 +149,7 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     ).copy()
     df = add_decision_columns(df)
     x, y, feature_cols = build_feature_matrix(df)
+    dataset_time_range = build_dataset_time_range(df)
 
     # One simulated image is reused by all locations for the same timestamp.
     # Grouping by timestamp prevents the same image context from appearing in
@@ -156,6 +167,8 @@ def train_models(dataset_path: Path) -> dict[str, object]:
         )
 
     split_summary = {
+        "dataset_scope": "training_snapshot_not_live_forecast",
+        "dataset_time_range": dataset_time_range,
         "strategy": "GroupShuffleSplit grouped by timestamp",
         "input_rows": int(len(raw_df)),
         "model_rows_after_dedup": int(len(df)),
@@ -243,30 +256,42 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     ]
     demo_df[demo_cols].to_csv(REPORT_DIR / "recommendation_demo.csv", index=False)
 
-    best_slot = recommend_best_slot(
+    training_snapshot_best_slot = recommend_best_slot(
         df[df["location_name"].isin(AGRICULTURAL_LOCATIONS)]
     )
-    best_slot_payload = None
-    if best_slot is not None:
-        best_slot_payload = {
-            "location_name": best_slot["location_name"],
-            "timestamp": best_slot["timestamp"],
-            "flyability_score": float(best_slot["flyability_score"]),
-            "recommendation_text": build_recommendation_text(best_slot, "TAKE_OFF"),
+    training_snapshot_best_slot_payload = None
+    if training_snapshot_best_slot is not None:
+        training_snapshot_best_slot_payload = {
+            "scope": "best_slot_inside_training_snapshot_not_live_forecast",
+            "dataset_time_range": dataset_time_range,
+            "location_name": training_snapshot_best_slot["location_name"],
+            "timestamp": training_snapshot_best_slot["timestamp"],
+            "flyability_score": float(training_snapshot_best_slot["flyability_score"]),
+            "recommendation_text": build_recommendation_text(
+                training_snapshot_best_slot,
+                "TAKE_OFF",
+            ),
         }
-        (REPORT_DIR / "best_slot.json").write_text(
-            json.dumps(best_slot_payload, ensure_ascii=False, indent=2),
+        TRAINING_SNAPSHOT_BEST_SLOT_REPORT.write_text(
+            json.dumps(
+                training_snapshot_best_slot_payload,
+                ensure_ascii=False,
+                indent=2,
+            ),
             encoding="utf-8",
         )
+    LEGACY_BEST_SLOT_REPORT.unlink(missing_ok=True)
 
     return {
+        "dataset_scope": "training_snapshot_not_live_forecast",
+        "dataset_time_range": dataset_time_range,
         "dataset_rows": len(df),
         "split_summary": split_summary,
         "feature_count": len(feature_cols),
         "class_distribution": y.value_counts().to_dict(),
         "metrics": metrics_df.to_dict(orient="records"),
         "best_model": best_name,
-        "best_slot": best_slot_payload,
+        "training_snapshot_best_slot": training_snapshot_best_slot_payload,
     }
 
 

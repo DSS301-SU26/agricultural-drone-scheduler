@@ -34,7 +34,9 @@ def main() -> None:
 
     feature_cols = payload["feature_columns"]
     action = payload["pipeline"].predict(slot[feature_cols].to_frame().T)[0]
-    print(f"Best slot       : {slot['location_name']} - {slot['timestamp']}")
+    print("Dataset scope   : training snapshot, not live forecast")
+    print(f"Data source     : {args.dataset}")
+    print(f"Snapshot slot   : {slot['location_name']} - {slot['timestamp']}")
     print(f"Model           : {payload['model_name']}")
     print(f"Predicted action: {action}")
     print(f"Recommendation : {build_recommendation_text(slot, action)}")
@@ -42,4 +44,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

@@ -22,7 +22,7 @@ from .decision_engine import (
     calculate_dynamic_flow_rate,
     derive_decision_action,
 )
-from .train_decision_model import DEFAULT_DATASET, MODEL_DIR
+from .train_decision_model import DEFAULT_DATASET, MODEL_DIR, ROOT
 
 
 SCENARIOS = {
@@ -72,6 +72,37 @@ SCENARIOS = {
     },
 }
 
+LIVE_DATA_DIR = ROOT / "data" / "clean"
+
+
+def latest_clean_dataset(clean_dir: Path = LIVE_DATA_DIR) -> Path:
+    clean_files = sorted(clean_dir.glob("weather_clean_*.csv"))
+    return clean_files[-1] if clean_files else DEFAULT_DATASET
+
+
+def add_reference_features(
+    df: pd.DataFrame,
+    feature_cols: list[str],
+    reference_dataset: Path = DEFAULT_DATASET,
+) -> tuple[pd.DataFrame, list[str]]:
+    missing_cols = [col for col in feature_cols if col not in df.columns]
+    if not missing_cols:
+        return df, []
+
+    reference_df = pd.read_csv(reference_dataset)
+    unavailable_cols = [col for col in missing_cols if col not in reference_df.columns]
+    if unavailable_cols:
+        raise ValueError(
+            "Khong du feature de chay model: " + ", ".join(unavailable_cols)
+        )
+
+    fallback_values = reference_df[missing_cols].median()
+    fallback_df = pd.DataFrame(
+        {col: fallback_values[col] for col in missing_cols},
+        index=df.index,
+    )
+    return pd.concat([df, fallback_df], axis=1), missing_cols
+
 
 def pick_current_slot(df: pd.DataFrame, location: str | None) -> pd.Series:
     if location:
@@ -93,7 +124,12 @@ def pick_current_slot(df: pd.DataFrame, location: str | None) -> pd.Series:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=None,
+        help="Forecast clean CSV. Mac dinh: file moi nhat trong data/clean.",
+    )
     parser.add_argument("--location", default=None)
     parser.add_argument(
         "--scenario",
@@ -105,7 +141,12 @@ def main() -> None:
 
     payload = joblib.load(MODEL_DIR / "drone_decision_model.joblib")
     run_time = datetime.now(ZoneInfo("Asia/Ho_Chi_Minh")).replace(tzinfo=None)
-    df = add_decision_columns(pd.read_csv(args.dataset))
+    dataset_path = args.dataset or latest_clean_dataset()
+    live_df, fallback_cols = add_reference_features(
+        pd.read_csv(dataset_path),
+        payload["feature_columns"],
+    )
+    df = add_decision_columns(live_df)
     slot = pick_current_slot(df, args.location).copy()
 
     scenario_name = args.scenario or "dataset_nearest_time"
@@ -122,10 +163,11 @@ def main() -> None:
 
     feature_cols = payload["feature_columns"]
     model_action = payload["pipeline"].predict(slot[feature_cols].to_frame().T)[0]
-    final_action = slot["decision_action"] if args.scenario else model_action
-    safety_override = bool(args.scenario and model_action != final_action)
+    final_action = slot["decision_action"]
+    policy_override = bool(model_action != final_action)
 
     print("\n=== DSS301 UAV Decision Demo ===")
+    print(f"Data source     : {dataset_path}")
     print(f"Location        : {slot['location_name']}")
     print(f"Scenario        : {scenario_name}")
     print(f"Run time        : {run_time:%Y-%m-%d %H:%M:%S}")
@@ -135,10 +177,11 @@ def main() -> None:
     print(f"Rain probability: {float(slot['precipitation_probability']):.0f}%")
     print(f"Precipitation   : {float(slot['precipitation']):.1f} mm")
     print(f"Flow-rate       : {float(slot['dynamic_flow_rate_pct']):.1f}%")
+    print(f"ML suggestion   : {model_action}")
     print(f"DSS decision    : {final_action}")
-    if args.scenario:
-        print(f"ML suggestion   : {model_action} (reference only: original image embedding retained)")
-        print(f"Safety override : {'APPLIED' if safety_override else 'not needed'}")
+    print(f"Policy override : {'APPLIED' if policy_override else 'not needed'}")
+    if fallback_cols:
+        print("Image embedding : reference snapshot fallback")
     print(f"Recommendation  : {build_recommendation_text(slot, final_action)}")
 
 
