@@ -6,6 +6,104 @@ File nay dung de Phat mo trong IntelliJ va chay demo Data Scientist cho de tai:
 
 ---
 
+## Quy trinh trinh bay
+
+He thong co 2 pha rieng:
+
+```text
+OFFLINE - Xay dung model:
+Du lieu lich su + anh mo phong -> clean -> merge -> train va so sanh model
+-> chon model tot nhat -> backtesting voi baseline bay co dinh luc 12:00.
+
+ONLINE - Van hanh gan thoi gian hien tai:
+WeatherAPI forecast moi nhat -> clean -> upload Supabase
+-> model da train + safety policy -> DSS recommendation cho operator.
+```
+
+Luu y quan trong:
+
+```text
+src/data/final_training_data.csv la snapshot train/backtest, khong phai forecast live.
+Timestamp cu trong snapshot train la binh thuong.
+
+data/clean/weather_clean_*.csv la forecast moi nhat dung cho live demo.
+Sau khi chay main.py, live_demo tu dong chon file clean moi nhat trong thu muc nay.
+```
+
+---
+
+## Pipeline day du tu dau den model AI
+
+Day la chuoi lenh de demo tung buoc ro rang thay vi gom tat ca vao `main.py`.
+Chay tung block theo thu tu:
+
+```bash
+cd /Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.fetch_weather --days 3 --save
+RAW_FILE="$(ls -t data/raw/weather_raw_*.csv | head -n 1)"
+echo "$RAW_FILE"
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.clean_data --input "$RAW_FILE"
+CLEAN_FILE="$(ls -t data/clean/weather_clean_*.csv | head -n 1)"
+echo "$CLEAN_FILE"
+```
+
+```bash
+cp "$CLEAN_FILE" src/data/clean/
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.simulate_images
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.extract_features
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.merge_data
+```
+
+```bash
+.venv/bin/python -m src.decision_model.train_decision_model
+```
+
+```bash
+.venv/bin/python -m src.decision_model.backtest_policy
+```
+
+```bash
+.venv/bin/python -m src.data_pipeline.load_to_supabase --input "$CLEAN_FILE"
+```
+
+```bash
+.venv/bin/python -m src.decision_model.live_demo --location "Can Tho"
+```
+
+Y nghia tung buoc:
+
+```text
+fetch_weather       -> lay forecast WeatherAPI moi nhat vao data/raw
+clean_data          -> xu ly missing, loc gio bay va tao flyability_score
+cp                  -> dua snapshot clean moi vao thu muc dataset train
+simulate_images     -> chon anh weather-scene mo phong theo timestamp
+extract_features    -> MobileNetV2 bien moi anh thanh 1280 img_feature
+merge_data          -> ghep weather + image feature thanh final_training_data.csv
+train_decision_model-> so sanh model va luu model tot nhat
+backtest_policy     -> so sanh DSS voi baseline bay co dinh luc 12:00
+load_to_supabase    -> upload forecast clean moi nhat
+live_demo           -> khuyen nghi van hanh gan thoi gian hien tai
+```
+
+Luu y: `extract_features` co the mat vai phut vi MobileNetV2 phai doc tung anh.
+
+---
+
 ## 1. Mo Terminal trong IntelliJ
 
 Trong IntelliJ:
@@ -21,20 +119,20 @@ pwd
 Ket qua nen la:
 
 ```text
-/Users/macprocuaphat/agricultural-drone-scheduler
+/Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler
 ```
 
 Neu chua dung thu muc, chay:
 
 ```bash
-cd /Users/macprocuaphat/agricultural-drone-scheduler
+cd /Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler
 ```
 
 ---
 
 ## 2. Train model truoc khi demo
 
-Chay lenh nay de train va so sanh cac model:
+Chay lenh nay de train va so sanh cac model tren snapshot lich su/mo phong:
 
 ```bash
 .venv/bin/python -m src.decision_model.train_decision_model
@@ -48,7 +146,7 @@ reports/model_metrics.csv
 reports/classification_report.txt
 reports/training_summary.json
 reports/recommendation_demo.csv
-reports/best_slot.json
+reports/training_snapshot_best_slot.json
 ```
 
 Noi voi giang vien:
@@ -57,13 +155,21 @@ Noi voi giang vien:
 Em train va so sanh Decision Tree, Random Forest, Logistic Regression voi baseline.
 Sau khi loai du lieu trung va chia train/test theo timestamp de tranh leakage,
 em danh gia accuracy, precision, recall va F1-score roi chon model tot nhat.
+Dong training_snapshot_best_slot chi la vi du tot nhat ben trong snapshot train,
+khong phai khuyen nghi bay live. Khuyen nghi live nam o buoc tiep theo.
 ```
 
 ---
 
-## 3. Demo theo du lieu gan thoi diem hien tai
+## 3. Cap nhat forecast va demo theo du lieu gan thoi diem hien tai
 
-Lenh nay lay du lieu gan nhat trong dataset/forecast cua tinh duoc chon:
+Lay forecast 3 ngay moi nhat, clean va upload Supabase:
+
+```bash
+.venv/bin/python main.py
+```
+
+Sau do chay live demo. Script se tu doc file forecast clean moi nhat:
 
 ```bash
 .venv/bin/python -m src.decision_model.live_demo --location "Can Tho"
@@ -97,8 +203,11 @@ Vi du:
 Luu y:
 
 ```text
-Neu hien tai ngoai gio bay 06:00-17:00, script co the lay slot forecast tiep theo trong dataset.
+Output co dong Data source de kiem tra script dang doc forecast live nao.
+Neu hien tai ngoai gio bay 06:00-17:00, script co the lay slot forecast tiep theo.
 Neu muon demo dung gio hien tai, dung cac scenario o muc 4.
+Neu chua co anh ruong moi, model dung image embedding tham chieu tu snapshot train
+va output se ghi ro: Image embedding : reference snapshot fallback.
 ```
 
 ---
@@ -227,11 +336,19 @@ Baseline la lich bay co dinh luc 12:00; DSS chon khung gio tot nhat dang co.
 Chay theo thu tu nay:
 
 ```bash
-cd /Users/macprocuaphat/agricultural-drone-scheduler
+cd /Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler
 ```
 
 ```bash
 .venv/bin/python -m src.decision_model.train_decision_model
+```
+
+```bash
+.venv/bin/python main.py
+```
+
+```bash
+.venv/bin/python -m src.decision_model.live_demo --location "Can Tho"
 ```
 
 ```bash
@@ -298,7 +415,7 @@ pwd
 Neu khong phai project folder, chay:
 
 ```bash
-cd /Users/macprocuaphat/agricultural-drone-scheduler
+cd /Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler
 ```
 
 ### Loi: Python khong co thu vien

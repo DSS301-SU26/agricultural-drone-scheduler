@@ -45,7 +45,7 @@ Final output artifacts:
 - `reports/classification_report.txt`: precision, recall, F1 by class.
 - `reports/training_summary.json`: grouped split details and deduplication audit.
 - `reports/recommendation_demo.csv`: demo-ready recommendation rows for dashboard/Power BI.
-- `reports/best_slot.json`: next best golden flight window.
+- `reports/training_snapshot_best_slot.json`: best example inside the training snapshot, not a live recommendation.
 - `reports/backtesting_summary.csv`: baseline fixed schedule vs DSS activated KPI result.
 - `reports/backtesting_daily_results.csv`: detailed daily scenario records.
 
@@ -60,7 +60,8 @@ Final output artifacts:
 
 ```bash
 .venv/bin/python -m src.decision_model.train_decision_model
-.venv/bin/python -m src.decision_model.demo_decision --location "Dong Thap"
+.venv/bin/python main.py
+.venv/bin/python -m src.decision_model.live_demo --location "Can Tho"
 .venv/bin/python -m src.decision_model.backtest_policy
 .venv/bin/python -m src.decision_model.live_demo --location "Can Tho" --scenario lock_spray
 ```

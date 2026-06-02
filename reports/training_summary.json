@@ -1,4 +1,9 @@
 {
+  "dataset_scope": "training_snapshot_not_live_forecast",
+  "dataset_time_range": {
+    "min_timestamp": "2026-05-25 06:00:00",
+    "max_timestamp": "2026-05-30 17:00:00"
+  },
   "strategy": "GroupShuffleSplit grouped by timestamp",
   "input_rows": 504,
   "model_rows_after_dedup": 504,
