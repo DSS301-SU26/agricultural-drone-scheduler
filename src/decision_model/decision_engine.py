@@ -115,6 +115,46 @@ def calculate_dynamic_flow_rate(row: pd.Series) -> float:
     return round(min(120.0, max(0.0, flow)), 1)
 
 
+def calculate_flyability_score(row: pd.Series) -> float:
+    """Score the same safety conditions used by the decision policy."""
+    checks = {
+        "wind": float(row.get("wind_speed_10m", 0)) <= THRESHOLDS.max_wind_speed,
+        "gust": float(row.get("wind_gusts_10m", 0)) <= THRESHOLDS.max_wind_gust,
+        "rain": float(row.get("precipitation", 0)) == 0,
+        "rain_prob": float(row.get("precipitation_probability", 0)) <= THRESHOLDS.max_rain_probability,
+        "cloud": float(row.get("cloud_cover", 0)) <= THRESHOLDS.max_cloud_cover,
+        "visibility": float(row.get("visibility", THRESHOLDS.min_visibility)) >= THRESHOLDS.min_visibility,
+        "weather": int(row.get("weather_code", 0)) not in UNSAFE_WEATHER_CODES,
+        "temperature": float(row.get("temperature_2m", 0)) <= THRESHOLDS.max_safe_temperature,
+    }
+    weights = {
+        "wind": 0.20,
+        "gust": 0.15,
+        "rain": 0.15,
+        "rain_prob": 0.08,
+        "cloud": 0.05,
+        "visibility": 0.03,
+        "weather": 0.04,
+        "temperature": 0.30,
+    }
+    return round(sum(float(checks[name]) * weight for name, weight in weights.items()), 4)
+
+
+def derive_risk_level(row: pd.Series, action: str | None = None) -> str:
+    action = action or str(row.get("decision_action", derive_decision_action(row)))
+    if action in {"LOCK_SPRAY", "RETURN_TO_CHARGING"}:
+        return "HIGH"
+    if action == "DELAY_FLIGHT":
+        return "MEDIUM"
+
+    score = float(row.get("flyability_score", calculate_flyability_score(row)))
+    if score < 0.4:
+        return "HIGH"
+    if score < 0.7:
+        return "MEDIUM"
+    return "LOW"
+
+
 def derive_decision_action(row: pd.Series) -> str:
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
@@ -135,7 +175,12 @@ def derive_decision_action(row: pd.Series) -> str:
 def add_decision_columns(df: pd.DataFrame) -> pd.DataFrame:
     enriched = df.copy()
     enriched["crop_condition"] = enriched.apply(infer_crop_condition, axis=1)
+    enriched["flyability_score"] = enriched.apply(calculate_flyability_score, axis=1)
     enriched["decision_action"] = enriched.apply(derive_decision_action, axis=1)
+    enriched["risk_level"] = enriched.apply(
+        lambda row: derive_risk_level(row, str(row["decision_action"])),
+        axis=1,
+    )
     enriched["dynamic_flow_rate_pct"] = enriched.apply(calculate_dynamic_flow_rate, axis=1)
     enriched["estimated_damage_cost_usd"] = (
         enriched["decision_action"].isin(["LOCK_SPRAY", "RETURN_TO_CHARGING"]).astype(int)

@@ -8,6 +8,23 @@ from datetime import datetime
 import warnings
 warnings.filterwarnings("ignore")
 
+try:
+    from decision_model.decision_engine import (
+        THRESHOLDS,
+        UNSAFE_WEATHER_CODES,
+        calculate_flyability_score,
+        derive_decision_action,
+        derive_risk_level,
+    )
+except ModuleNotFoundError:
+    from ..decision_model.decision_engine import (
+        THRESHOLDS,
+        UNSAFE_WEATHER_CODES,
+        calculate_flyability_score,
+        derive_decision_action,
+        derive_risk_level,
+    )
+
 SAFETY_THRESHOLDS = {
     "wind_speed_10m": 20.0,
     "wind_gusts_10m": 28.0,
@@ -15,12 +32,6 @@ SAFETY_THRESHOLDS = {
     "precipitation_probability": 30.0,
     "cloud_cover": 80.0,
     "visibility": 1000.0,
-}
-# WeatherAPI condition codes that are unsafe for agricultural drone flights.
-UNSAFE_WEATHER_CODES = {
-    1087, 1273, 1276, 1279, 1282,
-    1192, 1195, 1201, 1243, 1246,
-    1135, 1147,
 }
 FLY_HOUR_START = 6
 FLY_HOUR_END   = 18
@@ -63,17 +74,16 @@ def run_pipeline(raw_filepath, save=True):
         "ok_cloud":     df["cloud_cover"]               <= SAFETY_THRESHOLDS["cloud_cover"],
         "ok_vis":       df["visibility"]                >= SAFETY_THRESHOLDS["visibility"],
         "ok_weather":   ~df["weather_code"].isin(UNSAFE_WEATHER_CODES),
+        "ok_temp":      df["temperature_2m"]             <= THRESHOLDS.max_safe_temperature,
     }
-    weights = {"ok_wind":0.30,"ok_gust":0.20,"ok_rain":0.20,
-               "ok_rain_prob":0.10,"ok_cloud":0.10,"ok_vis":0.05,"ok_weather":0.05}
 
     for k, v in conds.items():
         df[k] = v
 
-    df["flyability_score"] = sum(df[c].astype(float)*w for c,w in weights.items()).round(4)
-    df["fly_label"]  = df[["ok_wind","ok_gust","ok_rain","ok_weather"]].all(axis=1).map({True:"FLY",False:"NO_FLY"})
-    df["risk_level"] = pd.cut(df["flyability_score"],bins=[0,0.4,0.7,1.0],
-                              labels=["HIGH","MEDIUM","LOW"],include_lowest=True).astype(str)
+    df["flyability_score"] = df.apply(calculate_flyability_score, axis=1)
+    df["decision_action"] = df.apply(derive_decision_action, axis=1)
+    df["fly_label"] = (df["decision_action"] == "TAKE_OFF").map({True:"FLY",False:"NO_FLY"})
+    df["risk_level"] = df.apply(lambda row: derive_risk_level(row, row["decision_action"]), axis=1)
 
     df.drop(columns=list(conds.keys()), inplace=True)
 
