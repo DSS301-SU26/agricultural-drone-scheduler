@@ -7,7 +7,10 @@ Run from the project root:
 from __future__ import annotations
 
 import json
+import threading
+from contextlib import redirect_stdout
 from datetime import datetime, timedelta
+from io import StringIO
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -20,12 +23,14 @@ from .decision_model.decision_engine import (
     add_decision_columns,
     build_recommendation_text,
 )
+from .run_pipeline import run_weather_pipeline
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN_DATA_DIRS = [ROOT / "src" / "data" / "clean", ROOT / "data" / "clean"]
 REPORT_DIR = ROOT / "reports"
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
+PIPELINE_LOCK = threading.Lock()
 
 app = FastAPI(
     title="Agricultural Drone Scheduler API",
@@ -34,7 +39,13 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:5174",
+        "http://127.0.0.1:5174",
+    ],
+    allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -159,6 +170,38 @@ def dashboard_kpis() -> list[dict[str, Any]]:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "agricultural-drone-scheduler"}
+
+
+@app.post("/api/pipeline/run")
+def run_pipeline_endpoint(days: int = 3, skip_upload: bool = False) -> dict[str, Any]:
+    if not PIPELINE_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="Weather pipeline is already running.")
+
+    started_at = datetime.now(VIETNAM_TZ)
+    output = StringIO()
+    try:
+        with redirect_stdout(output):
+            result = run_weather_pipeline(days=days, skip_upload=skip_upload)
+
+        finished_at = datetime.now(VIETNAM_TZ)
+        return {
+            **result,
+            "started_at": started_at.isoformat(timespec="minutes"),
+            "finished_at": finished_at.isoformat(timespec="minutes"),
+            "duration_seconds": round((finished_at - started_at).total_seconds(), 2),
+            "log": output.getvalue(),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": str(exc),
+                "started_at": started_at.isoformat(timespec="minutes"),
+                "log": output.getvalue(),
+            },
+        ) from exc
+    finally:
+        PIPELINE_LOCK.release()
 
 
 @app.get("/api/locations")
