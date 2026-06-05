@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 import pandas as pd
 from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 from .decision_model.decision_engine import (
     DecisionThresholds,
@@ -35,8 +36,14 @@ CLEAN_DATA_DIRS = [ROOT / "src" / "data" / "clean", ROOT / "data" / "clean"]
 REPORT_DIR = ROOT / "reports"
 CONFIG_DIR = ROOT / "config"
 DECISION_CONFIG_PATH = CONFIG_DIR / "decision_config.json"
+IMAGE_KAGGLE_DIR = ROOT / "src" / "data" / "image_kaggle"
+GENERATED_IMAGE_DIR = ROOT / "src" / "data" / "images"
+IMAGE_FEATURES_PATH = ROOT / "src" / "data" / "image_features.csv"
+FINAL_TRAINING_DATA_PATH = ROOT / "src" / "data" / "final_training_data.csv"
+MODEL_PATH = ROOT / "models" / "drone_decision_model.joblib"
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 PIPELINE_LOCK = threading.Lock()
+AI_TRAINING_LOCK = threading.Lock()
 
 THRESHOLD_BOUNDS = {
     "max_wind_speed": (1.0, 80.0),
@@ -47,6 +54,8 @@ THRESHOLD_BOUNDS = {
     "min_visibility": (0.0, 50_000.0),
     "max_safe_temperature": (0.0, 60.0),
 }
+
+IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
 
 app = FastAPI(
     title="Agricultural Drone Scheduler API",
@@ -151,13 +160,14 @@ def write_decision_config(config: dict[str, Any]) -> dict[str, Any]:
 
 def decision_config_response(config: dict[str, Any] | None = None) -> dict[str, Any]:
     active_config = config or read_decision_config()
+    source = "file" if DECISION_CONFIG_PATH.exists() and active_config != default_decision_config() else "default"
     return {
         **active_config,
         "updated_at": datetime.fromtimestamp(
             DECISION_CONFIG_PATH.stat().st_mtime,
             VIETNAM_TZ,
         ).isoformat(timespec="minutes") if DECISION_CONFIG_PATH.exists() else None,
-        "source": "file" if DECISION_CONFIG_PATH.exists() else "default",
+        "source": source,
     }
 
 
@@ -179,6 +189,282 @@ def load_json_report(name: str) -> dict[str, Any]:
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def file_metadata(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    stat = path.stat()
+    return {
+        "path": str(path.relative_to(ROOT)),
+        "size_bytes": stat.st_size,
+        "updated_at": datetime.fromtimestamp(stat.st_mtime, VIETNAM_TZ).isoformat(timespec="minutes"),
+    }
+
+
+def image_files(directory: Path) -> list[Path]:
+    if not directory.exists():
+        return []
+    return sorted(
+        path
+        for path in directory.iterdir()
+        if path.is_file() and path.suffix.lower() in IMAGE_SUFFIXES
+    )
+
+
+def image_category_counts() -> dict[str, int]:
+    if not IMAGE_KAGGLE_DIR.exists():
+        return {}
+    return {
+        directory.name: len(image_files(directory))
+        for directory in sorted(IMAGE_KAGGLE_DIR.iterdir())
+        if directory.is_dir()
+    }
+
+
+def read_csv_shape(path: Path) -> dict[str, int]:
+    if not path.exists():
+        return {"rows": 0, "columns": 0, "image_feature_columns": 0}
+    df = pd.read_csv(path, nrows=5)
+    with path.open(encoding="utf-8") as handle:
+        row_count = max(sum(1 for _ in handle) - 1, 0)
+    return {
+        "rows": row_count,
+        "columns": len(df.columns),
+        "image_feature_columns": len([col for col in df.columns if col.startswith("img_feature_")]),
+    }
+
+
+def load_model_metrics() -> list[dict[str, Any]]:
+    path = REPORT_DIR / "model_metrics.csv"
+    if not path.exists():
+        return []
+    return pd.read_csv(path).to_dict(orient="records")
+
+
+def label_counts(series: pd.Series) -> dict[str, int]:
+    return {str(label): int(count) for label, count in series.value_counts().sort_index().items()}
+
+
+def calculate_location_model_metrics(location: str | None) -> list[dict[str, Any]]:
+    if not location:
+        return load_model_metrics()
+
+    df = load_training_rows(location)
+    if df.empty:
+        return []
+
+    from sklearn.base import clone
+    from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
+    from sklearn.model_selection import GroupShuffleSplit
+
+    from .decision_model.train_decision_model import build_feature_matrix, model_candidates
+
+    config = read_decision_config()
+    thresholds, unsafe_weather_codes = config_to_engine_args(config)
+    df = add_decision_columns(df, thresholds, unsafe_weather_codes)
+    x, y, _ = build_feature_matrix(df)
+    groups = df["timestamp"].astype(str)
+    splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
+    train_idx, test_idx = next(splitter.split(x, y, groups=groups))
+    x_train, x_test = x.iloc[train_idx], x.iloc[test_idx]
+    y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+    train_groups = groups.iloc[train_idx]
+    test_groups = groups.iloc[test_idx]
+    evaluation_context = {
+        "scope": "location",
+        "location": location,
+        "metric_basis": "macro_f1",
+        "split_strategy": "GroupShuffleSplit grouped by timestamp",
+        "train_rows": int(len(y_train)),
+        "test_rows": int(len(y_test)),
+        "train_timestamps": int(train_groups.nunique()),
+        "test_timestamps": int(test_groups.nunique()),
+        "train_class_distribution": label_counts(y_train),
+        "test_class_distribution": label_counts(y_test),
+    }
+
+    metrics = []
+    for name, pipeline in model_candidates().items():
+        try:
+            fitted = clone(pipeline).fit(x_train, y_train)
+            predictions = fitted.predict(x_test)
+            correct_predictions = int((predictions == y_test).sum())
+            metrics.append({
+                "model": name,
+                "accuracy": round(accuracy_score(y_test, predictions), 4),
+                "macro_precision": round(
+                    precision_score(y_test, predictions, average="macro", zero_division=0),
+                    4,
+                ),
+                "macro_recall": round(
+                    recall_score(y_test, predictions, average="macro", zero_division=0),
+                    4,
+                ),
+                "macro_f1": round(f1_score(y_test, predictions, average="macro", zero_division=0), 4),
+                "weighted_f1": round(f1_score(y_test, predictions, average="weighted", zero_division=0), 4),
+                "correct_predictions": correct_predictions,
+                "incorrect_predictions": int(len(y_test) - correct_predictions),
+                **evaluation_context,
+            })
+        except ValueError:
+            metrics.append({
+                "model": name,
+                "accuracy": 0,
+                "macro_precision": 0,
+                "macro_recall": 0,
+                "macro_f1": 0,
+                "weighted_f1": 0,
+                "correct_predictions": 0,
+                "incorrect_predictions": int(len(y_test)),
+                **evaluation_context,
+            })
+
+    return sorted(metrics, key=lambda row: (row["macro_f1"], row["accuracy"]), reverse=True)
+
+
+def image_category_for_row(row: pd.Series) -> str:
+    timestamp = pd.to_datetime(row.get("timestamp"))
+    rain = float(row.get("precipitation", 0))
+    cloud_cover = float(row.get("cloud_cover", 0))
+    if rain > 0:
+        return "Rain"
+    if cloud_cover > 50:
+        return "Cloudy"
+    if 5 <= timestamp.hour <= 7:
+        return "Sunrise"
+    return "Shine"
+
+
+def timestamp_to_image_filename(timestamp: Any) -> str:
+    safe_timestamp = str(timestamp).replace(":", "-").replace(" ", "_")
+    return f"{safe_timestamp}.jpg"
+
+
+def load_training_rows(location: str | None = None) -> pd.DataFrame:
+    if not FINAL_TRAINING_DATA_PATH.exists():
+        return pd.DataFrame()
+    df = pd.read_csv(FINAL_TRAINING_DATA_PATH)
+    if location:
+        df = df[df["location_name"] == location].copy()
+    return df
+
+
+def sample_generated_images(rows: pd.DataFrame | None = None, limit: int = 8) -> list[dict[str, Any]]:
+    if rows is None or rows.empty:
+        samples = image_files(GENERATED_IMAGE_DIR)[:limit]
+        sample_rows = None
+    else:
+        sample_rows = rows.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").head(limit)
+        samples = [GENERATED_IMAGE_DIR / timestamp_to_image_filename(row["timestamp"]) for _, row in sample_rows.iterrows()]
+
+    payload = []
+    for index, path in enumerate(samples):
+        if not path.exists():
+            continue
+        date_part, _, time_part = path.stem.partition("_")
+        timestamp = f"{date_part} {time_part.replace('-', ':')}" if time_part else path.stem
+        item = {
+            "filename": path.name,
+            "timestamp": timestamp,
+            "url": f"/api/ai-training/image/{path.name}",
+        }
+        if sample_rows is not None:
+            row = sample_rows.iloc[index]
+            item.update({
+                "location": str(row.get("location_name", "")),
+                "category": image_category_for_row(row),
+                "weather_description": str(row.get("weather_description", "")),
+            })
+        payload.append(item)
+    return payload
+
+
+def ai_training_status(location: str | None = None) -> dict[str, Any]:
+    generated_images = image_files(GENERATED_IMAGE_DIR)
+    training_rows = load_training_rows(location)
+    all_training_shape = read_csv_shape(FINAL_TRAINING_DATA_PATH)
+    feature_shape = read_csv_shape(IMAGE_FEATURES_PATH)
+    training_summary = load_json_report("training_summary.json")
+    metrics = calculate_location_model_metrics(location)
+    best_metric = metrics[0] if metrics else {}
+    model_evaluation = {
+        "metric_basis": best_metric.get("metric_basis", "macro_f1"),
+        "split_strategy": best_metric.get("split_strategy", training_summary.get("strategy")),
+        "train_rows": best_metric.get("train_rows", training_summary.get("train_rows", 0)),
+        "test_rows": best_metric.get("test_rows", training_summary.get("test_rows", 0)),
+        "train_timestamps": best_metric.get("train_timestamps", training_summary.get("train_groups", 0)),
+        "test_timestamps": best_metric.get("test_timestamps", training_summary.get("test_groups", 0)),
+        "train_class_distribution": best_metric.get("train_class_distribution", {}),
+        "test_class_distribution": best_metric.get("test_class_distribution", {}),
+    }
+    timestamps = training_rows["timestamp"].drop_duplicates().tolist() if not training_rows.empty else []
+    generated_count = sum((GENERATED_IMAGE_DIR / timestamp_to_image_filename(timestamp)).exists() for timestamp in timestamps)
+    category_counts = (
+        training_rows.apply(image_category_for_row, axis=1).value_counts().sort_index().to_dict()
+        if not training_rows.empty
+        else image_category_counts()
+    )
+    return {
+        "location": location,
+        "scope": "location" if location else "all",
+        "refreshed_at": datetime.now(VIETNAM_TZ).isoformat(timespec="seconds"),
+        "image_categories": category_counts,
+        "generated_image_count": generated_count if location else len(generated_images),
+        "generated_image_samples": sample_generated_images(training_rows if location else None),
+        "image_features": {
+            **feature_shape,
+            "file": file_metadata(IMAGE_FEATURES_PATH),
+        },
+        "training_dataset": {
+            "rows": int(len(training_rows)) if location else all_training_shape["rows"],
+            "columns": all_training_shape["columns"],
+            "image_feature_columns": all_training_shape["image_feature_columns"],
+            "file": file_metadata(FINAL_TRAINING_DATA_PATH),
+        },
+        "model": {
+            "file": file_metadata(MODEL_PATH),
+            "best_model": best_metric.get("model"),
+            "macro_f1": best_metric.get("macro_f1"),
+            "accuracy": best_metric.get("accuracy"),
+        },
+        "training_summary": training_summary,
+        "model_evaluation": model_evaluation,
+        "metrics": metrics,
+    }
+
+
+def run_ai_step(step_name: str, runner, location: str | None = None) -> dict[str, Any]:
+    if not AI_TRAINING_LOCK.acquire(blocking=False):
+        raise HTTPException(status_code=409, detail="AI training pipeline is already running.")
+    started_at = datetime.now(VIETNAM_TZ)
+    output = StringIO()
+    try:
+        with redirect_stdout(output):
+            result = runner()
+        finished_at = datetime.now(VIETNAM_TZ)
+        return {
+            "status": "ok",
+            "step": step_name,
+            "result": result,
+            "started_at": started_at.isoformat(timespec="minutes"),
+            "finished_at": finished_at.isoformat(timespec="minutes"),
+            "duration_seconds": round((finished_at - started_at).total_seconds(), 2),
+            "log": output.getvalue(),
+            "ai_training": ai_training_status(location),
+        }
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                "message": str(exc),
+                "step": step_name,
+                "started_at": started_at.isoformat(timespec="minutes"),
+                "log": output.getvalue(),
+            },
+        ) from exc
+    finally:
+        AI_TRAINING_LOCK.release()
 
 
 def parse_reference_time(at: str | None) -> datetime:
@@ -278,6 +564,64 @@ def dashboard_kpis() -> list[dict[str, Any]]:
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "agricultural-drone-scheduler"}
+
+
+@app.get("/api/ai-training/status")
+def get_ai_training_status(location: str | None = None) -> dict[str, Any]:
+    return ai_training_status(location)
+
+
+@app.get("/api/ai-training/metrics")
+def get_ai_training_metrics(location: str | None = None) -> dict[str, Any]:
+    return {
+        "metrics": calculate_location_model_metrics(location),
+        "training_summary": load_json_report("training_summary.json"),
+        "classification_report": (REPORT_DIR / "classification_report.txt").read_text(encoding="utf-8")
+        if (REPORT_DIR / "classification_report.txt").exists()
+        else "",
+    }
+
+
+@app.get("/api/ai-training/image/{filename}")
+def get_ai_training_image(filename: str) -> FileResponse:
+    image_path = (GENERATED_IMAGE_DIR / filename).resolve()
+    if image_path.parent != GENERATED_IMAGE_DIR.resolve() or image_path.suffix.lower() not in IMAGE_SUFFIXES:
+        raise HTTPException(status_code=404, detail="Image not found.")
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail="Image not found.")
+    return FileResponse(image_path)
+
+
+@app.post("/api/ai-training/simulate-images")
+def simulate_ai_training_images(location: str | None = None) -> dict[str, Any]:
+    def runner() -> None:
+        from .data_pipeline.simulate_images import main as simulate_images_main
+
+        return simulate_images_main()
+
+    return run_ai_step("simulate_images", runner, location)
+
+
+@app.post("/api/ai-training/extract-features")
+def extract_ai_training_features(location: str | None = None) -> dict[str, Any]:
+    def runner() -> None:
+        from .data_pipeline.extract_features import main as extract_features_main
+
+        return extract_features_main()
+
+    return run_ai_step("extract_features", runner, location)
+
+
+@app.post("/api/ai-training/train")
+def train_ai_model(location: str | None = None) -> dict[str, Any]:
+    def runner() -> dict[str, Any]:
+        from .data_pipeline.merge_data import main as merge_data_main
+        from .decision_model.train_decision_model import train_models
+
+        merge_data_main()
+        return train_models(FINAL_TRAINING_DATA_PATH)
+
+    return run_ai_step("train_model", runner, location)
 
 
 @app.get("/api/decision-config")
