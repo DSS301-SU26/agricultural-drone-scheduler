@@ -3,7 +3,16 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from src.api import dashboard, health, locations, reset_decision_config, run_pipeline_endpoint, update_decision_config
+from src.api import (
+    dashboard,
+    get_ai_training_status,
+    health,
+    locations,
+    reset_decision_config,
+    run_pipeline_endpoint,
+    train_ai_model,
+    update_decision_config,
+)
 
 
 class DashboardApiTest(unittest.TestCase):
@@ -49,6 +58,49 @@ class DashboardApiTest(unittest.TestCase):
                 reset_decision_config()
                 restored = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
                 self.assertEqual(restored["current"]["decision_action"], "TAKE_OFF")
+
+    def test_ai_training_status_reads_existing_artifacts(self):
+        payload = get_ai_training_status("Dong Thap")
+        self.assertEqual(payload["scope"], "location")
+        self.assertEqual(payload["location"], "Dong Thap")
+        self.assertGreater(payload["generated_image_count"], 0)
+        self.assertGreater(payload["image_features"]["image_feature_columns"], 0)
+        self.assertGreater(payload["training_dataset"]["rows"], 0)
+        self.assertGreaterEqual(len(payload["metrics"]), 1)
+        self.assertTrue(all(metric["scope"] == "location" for metric in payload["metrics"]))
+        self.assertEqual(payload["model_evaluation"]["metric_basis"], "macro_f1")
+        self.assertGreater(payload["model_evaluation"]["test_rows"], 0)
+        self.assertGreater(payload["metrics"][0]["test_rows"], 0)
+        self.assertIn("correct_predictions", payload["metrics"][0])
+        self.assertIn("test_class_distribution", payload["metrics"][0])
+        self.assertTrue(all(sample["location"] == "Dong Thap" for sample in payload["generated_image_samples"]))
+
+    def test_ai_training_metrics_change_by_location(self):
+        dong_thap = get_ai_training_status("Dong Thap")
+        can_tho = get_ai_training_status("Can Tho")
+
+        self.assertNotEqual(
+            [metric["macro_f1"] for metric in dong_thap["metrics"]],
+            [metric["macro_f1"] for metric in can_tho["metrics"]],
+        )
+
+    def test_ai_training_train_endpoint_reports_status(self):
+        fake_result = {
+            "best_model": "decision_tree",
+            "feature_count": 42,
+            "metrics": [],
+        }
+        with (
+            patch("src.data_pipeline.merge_data.main", return_value=None),
+            patch("src.decision_model.train_decision_model.train_models", return_value=fake_result),
+        ):
+            payload = train_ai_model("Dong Thap")
+
+        self.assertEqual(payload["status"], "ok")
+        self.assertEqual(payload["step"], "train_model")
+        self.assertEqual(payload["result"]["best_model"], "decision_tree")
+        self.assertIn("ai_training", payload)
+        self.assertEqual(payload["ai_training"]["location"], "Dong Thap")
 
     def test_pipeline_endpoint_reports_steps_without_fetching_weather(self):
         fake_result = {
