@@ -29,6 +29,7 @@ class DecisionThresholds:
     max_wind_speed: float = 20.0
     max_wind_gust: float = 28.0
     max_rain_probability: float = 30.0
+    return_to_charging_rain_probability: float = 70.0
     max_cloud_cover: float = 80.0
     min_visibility: float = 1_000.0
     max_safe_temperature: float = 35.0
@@ -53,6 +54,17 @@ UNSAFE_WEATHERAPI_CODES = {
     1282,
 }
 UNSAFE_WEATHER_CODES = UNSAFE_WMO_CODES | UNSAFE_WEATHERAPI_CODES
+
+SCORE_WEIGHTS = {
+    "wind": 0.20,
+    "gust": 0.15,
+    "rain": 0.15,
+    "rain_prob": 0.08,
+    "cloud": 0.05,
+    "visibility": 0.03,
+    "weather": 0.04,
+    "temperature": 0.30,
+}
 
 WEATHER_FEATURES = [
     "temperature_2m",
@@ -90,7 +102,10 @@ def infer_crop_condition(row: pd.Series) -> str:
     return "HEALTHY"
 
 
-def calculate_dynamic_flow_rate(row: pd.Series) -> float:
+def calculate_dynamic_flow_rate(
+    row: pd.Series,
+    thresholds: DecisionThresholds = THRESHOLDS,
+) -> float:
     """
     Estimate spray/irrigation flow-rate percentage.
 
@@ -105,49 +120,48 @@ def calculate_dynamic_flow_rate(row: pd.Series) -> float:
     elif condition == "WATER_STRESS":
         flow += 8.0
 
-    if float(row.get("temperature_2m", 0)) >= 35:
+    if float(row.get("temperature_2m", 0)) >= thresholds.max_safe_temperature:
         flow -= 12.0
     if float(row.get("wind_speed_10m", 0)) > 15:
         flow -= 10.0
-    if float(row.get("precipitation_probability", 0)) > 30:
+    if float(row.get("precipitation_probability", 0)) > thresholds.max_rain_probability:
         flow -= 15.0
 
     return round(min(120.0, max(0.0, flow)), 1)
 
 
-def calculate_flyability_score(row: pd.Series) -> float:
+def calculate_flyability_score(
+    row: pd.Series,
+    thresholds: DecisionThresholds = THRESHOLDS,
+    unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+) -> float:
     """Score the same safety conditions used by the decision policy."""
     checks = {
-        "wind": float(row.get("wind_speed_10m", 0)) <= THRESHOLDS.max_wind_speed,
-        "gust": float(row.get("wind_gusts_10m", 0)) <= THRESHOLDS.max_wind_gust,
+        "wind": float(row.get("wind_speed_10m", 0)) <= thresholds.max_wind_speed,
+        "gust": float(row.get("wind_gusts_10m", 0)) <= thresholds.max_wind_gust,
         "rain": float(row.get("precipitation", 0)) == 0,
-        "rain_prob": float(row.get("precipitation_probability", 0)) <= THRESHOLDS.max_rain_probability,
-        "cloud": float(row.get("cloud_cover", 0)) <= THRESHOLDS.max_cloud_cover,
-        "visibility": float(row.get("visibility", THRESHOLDS.min_visibility)) >= THRESHOLDS.min_visibility,
-        "weather": int(row.get("weather_code", 0)) not in UNSAFE_WEATHER_CODES,
-        "temperature": float(row.get("temperature_2m", 0)) <= THRESHOLDS.max_safe_temperature,
+        "rain_prob": float(row.get("precipitation_probability", 0)) <= thresholds.max_rain_probability,
+        "cloud": float(row.get("cloud_cover", 0)) <= thresholds.max_cloud_cover,
+        "visibility": float(row.get("visibility", thresholds.min_visibility)) >= thresholds.min_visibility,
+        "weather": int(row.get("weather_code", 0)) not in unsafe_weather_codes,
+        "temperature": float(row.get("temperature_2m", 0)) <= thresholds.max_safe_temperature,
     }
-    weights = {
-        "wind": 0.20,
-        "gust": 0.15,
-        "rain": 0.15,
-        "rain_prob": 0.08,
-        "cloud": 0.05,
-        "visibility": 0.03,
-        "weather": 0.04,
-        "temperature": 0.30,
-    }
-    return round(sum(float(checks[name]) * weight for name, weight in weights.items()), 4)
+    return round(sum(float(checks[name]) * weight for name, weight in SCORE_WEIGHTS.items()), 4)
 
 
-def derive_risk_level(row: pd.Series, action: str | None = None) -> str:
-    action = action or str(row.get("decision_action", derive_decision_action(row)))
+def derive_risk_level(
+    row: pd.Series,
+    action: str | None = None,
+    thresholds: DecisionThresholds = THRESHOLDS,
+    unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+) -> str:
+    action = action or str(row.get("decision_action", derive_decision_action(row, thresholds, unsafe_weather_codes)))
     if action in {"LOCK_SPRAY", "RETURN_TO_CHARGING"}:
         return "HIGH"
     if action == "DELAY_FLIGHT":
         return "MEDIUM"
 
-    score = float(row.get("flyability_score", calculate_flyability_score(row)))
+    score = float(row.get("flyability_score", calculate_flyability_score(row, thresholds, unsafe_weather_codes)))
     if score < 0.4:
         return "HIGH"
     if score < 0.7:
@@ -155,7 +169,11 @@ def derive_risk_level(row: pd.Series, action: str | None = None) -> str:
     return "LOW"
 
 
-def derive_decision_action(row: pd.Series) -> str:
+def derive_decision_action(
+    row: pd.Series,
+    thresholds: DecisionThresholds = THRESHOLDS,
+    unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+) -> str:
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
     rain = float(row.get("precipitation", 0))
@@ -163,25 +181,38 @@ def derive_decision_action(row: pd.Series) -> str:
     weather_code = int(row.get("weather_code", 0))
     temp = float(row.get("temperature_2m", 0))
 
-    if rain > 0 or rain_prob >= 70 or weather_code in UNSAFE_WEATHER_CODES:
+    if rain > 0 or rain_prob >= thresholds.return_to_charging_rain_probability or weather_code in unsafe_weather_codes:
         return "RETURN_TO_CHARGING"
-    if gust > THRESHOLDS.max_wind_gust or wind > THRESHOLDS.max_wind_speed:
+    if gust > thresholds.max_wind_gust or wind > thresholds.max_wind_speed:
         return "LOCK_SPRAY"
-    if rain_prob > THRESHOLDS.max_rain_probability or temp > THRESHOLDS.max_safe_temperature:
+    if rain_prob > thresholds.max_rain_probability or temp > thresholds.max_safe_temperature:
         return "DELAY_FLIGHT"
     return "TAKE_OFF"
 
 
-def add_decision_columns(df: pd.DataFrame) -> pd.DataFrame:
+def add_decision_columns(
+    df: pd.DataFrame,
+    thresholds: DecisionThresholds = THRESHOLDS,
+    unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+) -> pd.DataFrame:
     enriched = df.copy()
     enriched["crop_condition"] = enriched.apply(infer_crop_condition, axis=1)
-    enriched["flyability_score"] = enriched.apply(calculate_flyability_score, axis=1)
-    enriched["decision_action"] = enriched.apply(derive_decision_action, axis=1)
-    enriched["risk_level"] = enriched.apply(
-        lambda row: derive_risk_level(row, str(row["decision_action"])),
+    enriched["flyability_score"] = enriched.apply(
+        lambda row: calculate_flyability_score(row, thresholds, unsafe_weather_codes),
         axis=1,
     )
-    enriched["dynamic_flow_rate_pct"] = enriched.apply(calculate_dynamic_flow_rate, axis=1)
+    enriched["decision_action"] = enriched.apply(
+        lambda row: derive_decision_action(row, thresholds, unsafe_weather_codes),
+        axis=1,
+    )
+    enriched["risk_level"] = enriched.apply(
+        lambda row: derive_risk_level(row, str(row["decision_action"]), thresholds, unsafe_weather_codes),
+        axis=1,
+    )
+    enriched["dynamic_flow_rate_pct"] = enriched.apply(
+        lambda row: calculate_dynamic_flow_rate(row, thresholds),
+        axis=1,
+    )
     enriched["estimated_damage_cost_usd"] = (
         enriched["decision_action"].isin(["LOCK_SPRAY", "RETURN_TO_CHARGING"]).astype(int)
         * HARDWARE_DAMAGE_COST_USD
@@ -189,13 +220,17 @@ def add_decision_columns(df: pd.DataFrame) -> pd.DataFrame:
     return enriched
 
 
-def build_recommendation_text(row: pd.Series, action: str | None = None) -> str:
+def build_recommendation_text(
+    row: pd.Series,
+    action: str | None = None,
+    thresholds: DecisionThresholds = THRESHOLDS,
+) -> str:
     action = action or str(row.get("decision_action", "TAKE_OFF"))
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
     rain_prob = float(row.get("precipitation_probability", 0))
     temp = float(row.get("temperature_2m", 0))
-    flow = float(row.get("dynamic_flow_rate_pct", calculate_dynamic_flow_rate(row)))
+    flow = float(row.get("dynamic_flow_rate_pct", calculate_dynamic_flow_rate(row, thresholds)))
 
     if action == "TAKE_OFF":
         return (
