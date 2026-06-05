@@ -1,7 +1,9 @@
 import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
-from src.api import dashboard, health, locations, run_pipeline_endpoint
+from src.api import dashboard, health, locations, reset_decision_config, run_pipeline_endpoint, update_decision_config
 
 
 class DashboardApiTest(unittest.TestCase):
@@ -17,6 +19,7 @@ class DashboardApiTest(unittest.TestCase):
         payload = dashboard(location="Dong Thap", at="2026-06-01T10:00:00")
         self.assertEqual(payload["location"]["name"], "Dong Thap")
         self.assertTrue(payload["source"]["dataset"].startswith("weather_clean_"))
+        self.assertIn("decision_config", payload)
         self.assertIn(payload["current"]["decision_action"], {
             "TAKE_OFF",
             "DELAY_FLIGHT",
@@ -26,6 +29,26 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(len(payload["forecast"]), 12)
         self.assertEqual(len(payload["timeline_tiles"]), 12)
         self.assertEqual(len(payload["kpis"]), 3)
+
+    def test_dashboard_uses_dynamic_decision_config(self):
+        with TemporaryDirectory() as temp_dir:
+            config_path = Path(temp_dir) / "decision_config.json"
+            with (
+                patch("src.api.CONFIG_DIR", Path(temp_dir)),
+                patch("src.api.DECISION_CONFIG_PATH", config_path),
+            ):
+                baseline = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+                self.assertEqual(baseline["current"]["decision_action"], "TAKE_OFF")
+
+                update_decision_config({"thresholds": {"max_wind_speed": 5}})
+                restricted = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+
+                self.assertEqual(restricted["decision_config"]["source"], "file")
+                self.assertEqual(restricted["current"]["decision_action"], "LOCK_SPRAY")
+
+                reset_decision_config()
+                restored = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+                self.assertEqual(restored["current"]["decision_action"], "TAKE_OFF")
 
     def test_pipeline_endpoint_reports_steps_without_fetching_weather(self):
         fake_result = {

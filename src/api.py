@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import threading
 from contextlib import redirect_stdout
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from io import StringIO
 from pathlib import Path
@@ -16,10 +17,13 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
-from fastapi import FastAPI, HTTPException
+from fastapi import Body, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from .decision_model.decision_engine import (
+    DecisionThresholds,
+    SCORE_WEIGHTS,
+    UNSAFE_WEATHER_CODES,
     add_decision_columns,
     build_recommendation_text,
 )
@@ -29,8 +33,20 @@ from .run_pipeline import run_weather_pipeline
 ROOT = Path(__file__).resolve().parents[1]
 CLEAN_DATA_DIRS = [ROOT / "src" / "data" / "clean", ROOT / "data" / "clean"]
 REPORT_DIR = ROOT / "reports"
+CONFIG_DIR = ROOT / "config"
+DECISION_CONFIG_PATH = CONFIG_DIR / "decision_config.json"
 VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 PIPELINE_LOCK = threading.Lock()
+
+THRESHOLD_BOUNDS = {
+    "max_wind_speed": (1.0, 80.0),
+    "max_wind_gust": (1.0, 120.0),
+    "max_rain_probability": (0.0, 100.0),
+    "return_to_charging_rain_probability": (0.0, 100.0),
+    "max_cloud_cover": (0.0, 100.0),
+    "min_visibility": (0.0, 50_000.0),
+    "max_safe_temperature": (0.0, 60.0),
+}
 
 app = FastAPI(
     title="Agricultural Drone Scheduler API",
@@ -63,11 +79,99 @@ def latest_clean_dataset() -> Path:
     return max(candidates, key=lambda path: path.name)
 
 
-def load_forecast() -> tuple[pd.DataFrame, Path]:
+def default_decision_config() -> dict[str, Any]:
+    return {
+        "thresholds": asdict(DecisionThresholds()),
+        "unsafe_weather_codes": sorted(UNSAFE_WEATHER_CODES),
+        "score_weights": SCORE_WEIGHTS,
+    }
+
+
+def validate_decision_config(payload: dict[str, Any]) -> dict[str, Any]:
+    defaults = default_decision_config()
+    raw_thresholds = payload.get("thresholds", payload)
+    if not isinstance(raw_thresholds, dict):
+        raise HTTPException(status_code=422, detail="Decision thresholds must be an object.")
+
+    thresholds = defaults["thresholds"].copy()
+    for key, value in raw_thresholds.items():
+        if key not in thresholds:
+            continue
+        try:
+            number = float(value)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail=f"Threshold '{key}' must be a number.") from exc
+        lower, upper = THRESHOLD_BOUNDS[key]
+        if not lower <= number <= upper:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Threshold '{key}' must be between {lower:g} and {upper:g}.",
+            )
+        thresholds[key] = number
+
+    if thresholds["return_to_charging_rain_probability"] < thresholds["max_rain_probability"]:
+        raise HTTPException(
+            status_code=422,
+            detail="Return-to-charging rain probability must be greater than or equal to delay-flight rain probability.",
+        )
+
+    unsafe_weather_codes = payload.get("unsafe_weather_codes", defaults["unsafe_weather_codes"])
+    if not isinstance(unsafe_weather_codes, list):
+        raise HTTPException(status_code=422, detail="Unsafe weather codes must be a list.")
+    try:
+        unsafe_weather_codes = sorted({int(code) for code in unsafe_weather_codes})
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="Unsafe weather codes must contain numbers only.") from exc
+
+    return {
+        "thresholds": thresholds,
+        "unsafe_weather_codes": unsafe_weather_codes,
+        "score_weights": defaults["score_weights"],
+    }
+
+
+def read_decision_config() -> dict[str, Any]:
+    if not DECISION_CONFIG_PATH.exists():
+        return default_decision_config()
+    try:
+        payload = json.loads(DECISION_CONFIG_PATH.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Decision config file is invalid JSON.") from exc
+    return validate_decision_config(payload)
+
+
+def write_decision_config(config: dict[str, Any]) -> dict[str, Any]:
+    CONFIG_DIR.mkdir(exist_ok=True)
+    DECISION_CONFIG_PATH.write_text(
+        json.dumps(config, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return config
+
+
+def decision_config_response(config: dict[str, Any] | None = None) -> dict[str, Any]:
+    active_config = config or read_decision_config()
+    return {
+        **active_config,
+        "updated_at": datetime.fromtimestamp(
+            DECISION_CONFIG_PATH.stat().st_mtime,
+            VIETNAM_TZ,
+        ).isoformat(timespec="minutes") if DECISION_CONFIG_PATH.exists() else None,
+        "source": "file" if DECISION_CONFIG_PATH.exists() else "default",
+    }
+
+
+def config_to_engine_args(config: dict[str, Any]) -> tuple[DecisionThresholds, set[int]]:
+    return DecisionThresholds(**config["thresholds"]), set(config["unsafe_weather_codes"])
+
+
+def load_forecast() -> tuple[pd.DataFrame, Path, dict[str, Any], DecisionThresholds]:
     source_path = latest_clean_dataset()
+    config = read_decision_config()
+    thresholds, unsafe_weather_codes = config_to_engine_args(config)
     df = pd.read_csv(source_path)
     df["timestamp_dt"] = pd.to_datetime(df["timestamp"])
-    return add_decision_columns(df), source_path
+    return add_decision_columns(df, thresholds, unsafe_weather_codes), source_path, config, thresholds
 
 
 def load_json_report(name: str) -> dict[str, Any]:
@@ -97,7 +201,7 @@ def as_number(value: Any, digits: int = 1) -> float:
     return round(float(value), digits)
 
 
-def serialize_slot(row: pd.Series) -> dict[str, Any]:
+def serialize_slot(row: pd.Series, thresholds: DecisionThresholds) -> dict[str, Any]:
     action = str(row["decision_action"])
     return {
         "timestamp": row["timestamp_dt"].isoformat(timespec="minutes"),
@@ -119,11 +223,15 @@ def serialize_slot(row: pd.Series) -> dict[str, Any]:
         "dynamic_flow_rate_pct": as_number(row["dynamic_flow_rate_pct"]),
         "decision_action": action,
         "schedule_eligible": action == "TAKE_OFF",
-        "recommendation_text": build_recommendation_text(row, action),
+        "recommendation_text": build_recommendation_text(row, action, thresholds),
     }
 
 
-def recommended_slots(df: pd.DataFrame, reference_time: datetime) -> list[dict[str, Any]]:
+def recommended_slots(
+    df: pd.DataFrame,
+    reference_time: datetime,
+    thresholds: DecisionThresholds,
+) -> list[dict[str, Any]]:
     upcoming = df[df["timestamp_dt"] >= reference_time].copy()
     safe = upcoming[upcoming["decision_action"] == "TAKE_OFF"].copy()
     candidates = safe if not safe.empty else upcoming
@@ -133,7 +241,7 @@ def recommended_slots(df: pd.DataFrame, reference_time: datetime) -> list[dict[s
         ["flyability_score", "timestamp_dt"],
         ascending=[False, True],
     ).head(3)
-    return [serialize_slot(row) for _, row in candidates.iterrows()]
+    return [serialize_slot(row, thresholds) for _, row in candidates.iterrows()]
 
 
 def dashboard_kpis() -> list[dict[str, Any]]:
@@ -172,6 +280,24 @@ def health() -> dict[str, str]:
     return {"status": "ok", "service": "agricultural-drone-scheduler"}
 
 
+@app.get("/api/decision-config")
+def get_decision_config() -> dict[str, Any]:
+    return decision_config_response()
+
+
+@app.put("/api/decision-config")
+def update_decision_config(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    config = validate_decision_config(payload)
+    return decision_config_response(write_decision_config(config))
+
+
+@app.post("/api/decision-config/reset")
+def reset_decision_config() -> dict[str, Any]:
+    if DECISION_CONFIG_PATH.exists():
+        DECISION_CONFIG_PATH.unlink()
+    return decision_config_response(default_decision_config())
+
+
 @app.post("/api/pipeline/run")
 def run_pipeline_endpoint(days: int = 3, skip_upload: bool = False) -> dict[str, Any]:
     if not PIPELINE_LOCK.acquire(blocking=False):
@@ -206,7 +332,7 @@ def run_pipeline_endpoint(days: int = 3, skip_upload: bool = False) -> dict[str,
 
 @app.get("/api/locations")
 def locations() -> list[dict[str, Any]]:
-    df, _ = load_forecast()
+    df, _, _, _ = load_forecast()
     location_rows = (
         df[["location_name", "latitude", "longitude"]]
         .drop_duplicates()
@@ -228,7 +354,7 @@ def dashboard(
     location: str = "Dong Thap",
     at: str | None = None,
 ) -> dict[str, Any]:
-    df, source_path = load_forecast()
+    df, source_path, config, thresholds = load_forecast()
     location_df = df[df["location_name"] == location].copy()
     if location_df.empty:
         available = sorted(df["location_name"].unique().tolist())
@@ -242,7 +368,7 @@ def dashboard(
     selected_date = current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
     daily_df = daily_df.sort_values("timestamp_dt")
-    current_payload = serialize_slot(current)
+    current_payload = serialize_slot(current, thresholds)
 
     return {
         "source": {
@@ -253,6 +379,7 @@ def dashboard(
             ).isoformat(timespec="minutes"),
             "reference_time": reference_time.isoformat(timespec="minutes"),
         },
+        "decision_config": decision_config_response(config),
         "location": {
             "id": location,
             "name": location,
@@ -260,8 +387,8 @@ def dashboard(
             "longitude": as_number(current["longitude"], 4),
         },
         "current": current_payload,
-        "forecast": [serialize_slot(row) for _, row in daily_df.iterrows()],
-        "recommended_slots": recommended_slots(location_df, reference_time),
+        "forecast": [serialize_slot(row, thresholds) for _, row in daily_df.iterrows()],
+        "recommended_slots": recommended_slots(location_df, reference_time, thresholds),
         "has_safe_slot": bool(
             (
                 location_df[location_df["timestamp_dt"] >= reference_time]["decision_action"]
@@ -269,7 +396,7 @@ def dashboard(
             ).any()
         ),
         "timeline_tiles": [
-            serialize_slot(row)
+            serialize_slot(row, thresholds)
             for _, row in daily_df.iterrows()
         ],
         "kpis": dashboard_kpis(),
