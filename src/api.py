@@ -7,6 +7,7 @@ Run from the project root:
 from __future__ import annotations
 
 import json
+import os
 import threading
 from contextlib import redirect_stdout
 from dataclasses import asdict
@@ -56,6 +57,19 @@ THRESHOLD_BOUNDS = {
 }
 
 IMAGE_SUFFIXES = {".jpg", ".jpeg", ".png"}
+DEFAULT_CORS_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:5174",
+    "http://127.0.0.1:5174",
+    "https://agricultural-drone-scheduler.vercel.app",
+]
+
+
+def cors_origins() -> list[str]:
+    configured = os.getenv("FRONTEND_ORIGINS", "")
+    extra_origins = [origin.strip().rstrip("/") for origin in configured.split(",") if origin.strip()]
+    return sorted(set(DEFAULT_CORS_ORIGINS + extra_origins))
 
 app = FastAPI(
     title="Agricultural Drone Scheduler API",
@@ -64,12 +78,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:5174",
-        "http://127.0.0.1:5174",
-    ],
+    allow_origins=cors_origins(),
     allow_origin_regex=r"http://(localhost|127\.0\.0\.1):\d+",
     allow_credentials=True,
     allow_methods=["*"],
