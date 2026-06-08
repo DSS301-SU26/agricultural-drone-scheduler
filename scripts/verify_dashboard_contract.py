@@ -12,13 +12,21 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.api import dashboard, latest_clean_dataset, locations, serialize_slot  # noqa: E402
+from src.api import (  # noqa: E402
+    config_to_engine_args,
+    dashboard,
+    latest_clean_dataset,
+    locations,
+    read_decision_config,
+    serialize_slot,
+)
 from src.decision_model.decision_engine import add_decision_columns  # noqa: E402
 
 
 def verify_dashboard_contract() -> None:
     source = latest_clean_dataset()
-    enriched = add_decision_columns(pd.read_csv(source))
+    thresholds, unsafe_weather_codes = config_to_engine_args(read_decision_config())
+    enriched = add_decision_columns(pd.read_csv(source), thresholds, unsafe_weather_codes)
     checked_rows = 0
 
     for location in locations():
@@ -32,7 +40,7 @@ def verify_dashboard_contract() -> None:
                 location=location["name"],
                 at=first_slot["timestamp_dt"].isoformat(),
             )
-            expected = [serialize_slot(row) for _, row in daily_df.iterrows()]
+            expected = [serialize_slot(row, thresholds) for _, row in daily_df.iterrows()]
             actual = payload["timeline_tiles"]
             assert actual == expected, (
                 f"Timeline mismatch for {location['name']} "
@@ -45,8 +53,11 @@ def verify_dashboard_contract() -> None:
             checked_rows += len(actual)
 
     report = json.loads((ROOT / "reports" / "backtesting_summary.json").read_text())
-    hcm_safe = dashboard(location="Ho Chi Minh", at="2026-06-02T05:30:00")
-    hcm_rain = dashboard(location="Ho Chi Minh", at="2026-06-02T11:00:00")
+    hcm_df = enriched[enriched["location_name"] == "Ho Chi Minh"].copy()
+    hcm_safe_slot = hcm_df[hcm_df["decision_action"] == "TAKE_OFF"].iloc[0]
+    hcm_rain_slot = hcm_df[hcm_df["decision_action"] == "RETURN_TO_CHARGING"].iloc[0]
+    hcm_safe = dashboard(location="Ho Chi Minh", at=pd.to_datetime(hcm_safe_slot["timestamp"]).isoformat())
+    hcm_rain = dashboard(location="Ho Chi Minh", at=pd.to_datetime(hcm_rain_slot["timestamp"]).isoformat())
 
     assert hcm_safe["current"]["decision_action"] == "TAKE_OFF"
     assert hcm_rain["current"]["decision_action"] == "RETURN_TO_CHARGING"
@@ -58,8 +69,8 @@ def verify_dashboard_contract() -> None:
     print(f"- Locations: {len(locations())}")
     print(f"- Forecast rows checked: {checked_rows}")
     print(f"- Actions: {dict(Counter(enriched['decision_action']))}")
-    print("- Scenario TAKE_OFF: Ho Chi Minh, 2026-06-02 06:00")
-    print("- Scenario RETURN_TO_CHARGING: Ho Chi Minh, 2026-06-02 11:00")
+    print(f"- Scenario TAKE_OFF: Ho Chi Minh, {hcm_safe_slot['timestamp']}")
+    print(f"- Scenario RETURN_TO_CHARGING: Ho Chi Minh, {hcm_rain_slot['timestamp']}")
 
 
 if __name__ == "__main__":

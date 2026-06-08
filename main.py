@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
+from src.api import app
 from data_pipeline.fetch_weather import fetch_all_locations, save_raw, FARM_LOCATIONS
 from data_pipeline.clean_data import run_pipeline as clean_pipeline
 from data_pipeline.load_to_supabase import load_to_supabase
