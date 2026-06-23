@@ -42,21 +42,24 @@ class DashboardApiTest(unittest.TestCase):
     def test_dashboard_uses_dynamic_decision_config(self):
         with TemporaryDirectory() as temp_dir:
             config_path = Path(temp_dir) / "decision_config.json"
+            from src.api import ROOT
+            fixed_dataset = ROOT / "src" / "data" / "clean" / "weather_clean_20260602_1537.csv"
             with (
                 patch("src.api.CONFIG_DIR", Path(temp_dir)),
                 patch("src.api.DECISION_CONFIG_PATH", config_path),
+                patch("src.api.latest_clean_dataset", return_value=fixed_dataset),
             ):
-                baseline = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+                baseline = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
                 self.assertEqual(baseline["current"]["decision_action"], "TAKE_OFF")
 
                 update_decision_config({"thresholds": {"max_wind_speed": 5}})
-                restricted = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+                restricted = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
 
                 self.assertEqual(restricted["decision_config"]["source"], "file")
                 self.assertEqual(restricted["current"]["decision_action"], "LOCK_SPRAY")
 
                 reset_decision_config()
-                restored = dashboard(location="Dong Thap", at="2026-06-05T06:00:00")
+                restored = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
                 self.assertEqual(restored["current"]["decision_action"], "TAKE_OFF")
 
     def test_ai_training_status_reads_existing_artifacts(self):

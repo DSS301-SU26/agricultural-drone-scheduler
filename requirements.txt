@@ -13,3 +13,6 @@ uvicorn[standard]==0.29.0
 python-dateutil==2.9.0
 pytz==2024.1
 python-multipart==0.0.9
+opencv-python
+tensorflow
+

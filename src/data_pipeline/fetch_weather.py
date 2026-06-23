@@ -29,6 +29,10 @@ UNSAFE_CONDITION_CODES = {
 
 
 def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
+    global API_KEY
+    if not API_KEY:
+        load_dotenv(Path(__file__).parent.parent.parent / ".env")
+        API_KEY = os.getenv("WEATHERAPI_KEY")
     if not API_KEY:
         raise EnvironmentError(
             "Thieu WEATHERAPI_KEY trong .env\n"
