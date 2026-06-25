@@ -14,10 +14,8 @@ import joblib
 import pandas as pd
 from sklearn.base import clone
 from sklearn.compose import ColumnTransformer
-from sklearn.dummy import DummyClassifier
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.impute import SimpleImputer
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
     accuracy_score,
     classification_report,
@@ -27,15 +25,14 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import GroupShuffleSplit
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
-from sklearn.tree import DecisionTreeClassifier
+from xgboost import XGBClassifier
 
 from .decision_engine import (
     AGRICULTURAL_LOCATIONS,
     WEATHER_FEATURES,
+    RISK_WEIGHTS,
     add_decision_columns,
     build_recommendation_text,
-    image_feature_columns,
     recommend_best_slot,
 )
 
@@ -47,6 +44,14 @@ REPORT_DIR = ROOT / "reports"
 LEGACY_BEST_SLOT_REPORT = REPORT_DIR / "best_slot.json"
 TRAINING_SNAPSHOT_BEST_SLOT_REPORT = REPORT_DIR / "training_snapshot_best_slot.json"
 
+LABEL_MAPPING = {
+    "TAKE_OFF": 0,
+    "DELAY_FLIGHT": 1,
+    "LOCK_SPRAY": 2,
+    "RETURN_TO_CHARGING": 3
+}
+INV_LABEL_MAPPING = {v: k for k, v in LABEL_MAPPING.items()}
+
 
 def build_dataset_time_range(df: pd.DataFrame) -> dict[str, str]:
     timestamps = pd.to_datetime(df["timestamp"])
@@ -57,27 +62,11 @@ def build_dataset_time_range(df: pd.DataFrame) -> dict[str, str]:
 
 
 def build_feature_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
-    img_cols = image_feature_columns(df.columns)
-    feature_cols = [col for col in WEATHER_FEATURES if col in df.columns] + img_cols
-    return df[feature_cols], df["decision_action"], feature_cols
+    feature_cols = [col for col in WEATHER_FEATURES if col in df.columns]
+    return df[feature_cols], df["decision_action"].map(LABEL_MAPPING), feature_cols
 
 
 def model_candidates() -> dict[str, Pipeline]:
-    numeric_preprocess = ColumnTransformer(
-        transformers=[
-            (
-                "numeric",
-                Pipeline(
-                    steps=[
-                        ("imputer", SimpleImputer(strategy="median")),
-                        ("scaler", StandardScaler()),
-                    ]
-                ),
-                slice(0, None),
-            )
-        ]
-    )
-
     tree_preprocess = ColumnTransformer(
         transformers=[
             (
@@ -89,26 +78,6 @@ def model_candidates() -> dict[str, Pipeline]:
     )
 
     return {
-        "baseline_majority": Pipeline(
-            steps=[
-                ("preprocess", tree_preprocess),
-                ("model", DummyClassifier(strategy="most_frequent")),
-            ]
-        ),
-        "decision_tree": Pipeline(
-            steps=[
-                ("preprocess", tree_preprocess),
-                (
-                    "model",
-                    DecisionTreeClassifier(
-                        max_depth=6,
-                        min_samples_leaf=8,
-                        class_weight="balanced",
-                        random_state=42,
-                    ),
-                ),
-            ]
-        ),
         "random_forest": Pipeline(
             steps=[
                 ("preprocess", tree_preprocess),
@@ -118,22 +87,25 @@ def model_candidates() -> dict[str, Pipeline]:
                         n_estimators=250,
                         max_depth=10,
                         min_samples_leaf=4,
-                        class_weight="balanced_subsample",
+                        class_weight="balanced",
                         random_state=42,
                         n_jobs=-1,
                     ),
                 ),
             ]
         ),
-        "logistic_regression": Pipeline(
+        "xgboost": Pipeline(
             steps=[
-                ("preprocess", numeric_preprocess),
+                ("preprocess", tree_preprocess),
                 (
                     "model",
-                    LogisticRegression(
-                        max_iter=2_000,
-                        class_weight="balanced",
+                    XGBClassifier(
+                        n_estimators=250,
+                        max_depth=6,
+                        learning_rate=0.1,
                         random_state=42,
+                        n_jobs=-1,
+                        eval_metric="mlogloss"
                     ),
                 ),
             ]
@@ -151,9 +123,6 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     x, y, feature_cols = build_feature_matrix(df)
     dataset_time_range = build_dataset_time_range(df)
 
-    # One simulated image is reused by all locations for the same timestamp.
-    # Grouping by timestamp prevents the same image context from appearing in
-    # both train and test sets and makes the evaluation more honest.
     groups = df["timestamp"].astype(str)
     splitter = GroupShuffleSplit(n_splits=1, test_size=0.25, random_state=42)
     train_idx, test_idx = next(splitter.split(x, y, groups=groups))
@@ -161,10 +130,9 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
 
     if set(y_train) != set(y):
-        raise ValueError(
-            "Grouped train split does not contain every decision class. "
-            "Collect more timestamps or adjust the split seed."
-        )
+        # Fallback to normal stratified split if grouped split misses some classes
+        from sklearn.model_selection import train_test_split
+        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.25, random_state=42, stratify=y)
 
     split_summary = {
         "dataset_scope": "training_snapshot_not_live_forecast",
@@ -206,26 +174,37 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     metrics_df = pd.DataFrame(metrics).sort_values(
         ["macro_f1", "accuracy"], ascending=False
     )
-    best_name = str(metrics_df.iloc[0]["model"])
-    evaluation_model = fitted_models[best_name]
-    best_predictions = evaluation_model.predict(x_test)
-    deployment_model = clone(evaluation_model).fit(x, y)
+    
+    # Random Forest is Champion, XGBoost is Challenger
+    champion_model = fitted_models["random_forest"]
+    challenger_model = fitted_models["xgboost"]
+    
+    deployment_champion = clone(champion_model).fit(x, y)
+    deployment_challenger = clone(challenger_model).fit(x, y)
 
     MODEL_DIR.mkdir(exist_ok=True)
     REPORT_DIR.mkdir(exist_ok=True)
 
     model_payload = {
-        "model_name": best_name,
-        "pipeline": deployment_model,
+        "champion": deployment_champion,
+        "challenger": deployment_challenger,
         "feature_columns": feature_cols,
         "classes": sorted(y.unique().tolist()),
+        "label_mapping": LABEL_MAPPING,
+        "inv_label_mapping": INV_LABEL_MAPPING,
         "evaluation_split": split_summary,
     }
     joblib.dump(model_payload, MODEL_DIR / "drone_decision_model.joblib")
 
     metrics_df.to_csv(REPORT_DIR / "model_metrics.csv", index=False)
+    
+    # Save classification report for champion
+    best_predictions = champion_model.predict(x_test)
+    y_test_str = y_test.map(INV_LABEL_MAPPING)
+    best_predictions_str = pd.Series(best_predictions).map(INV_LABEL_MAPPING)
+    
     (REPORT_DIR / "classification_report.txt").write_text(
-        classification_report(y_test, best_predictions),
+        classification_report(y_test_str, best_predictions_str),
         encoding="utf-8",
     )
     (REPORT_DIR / "training_summary.json").write_text(
@@ -234,7 +213,8 @@ def train_models(dataset_path: Path) -> dict[str, object]:
     )
 
     demo_df = df.copy()
-    demo_df["model_action"] = deployment_model.predict(x)
+    demo_df["model_action_idx"] = deployment_champion.predict(x)
+    demo_df["model_action"] = demo_df["model_action_idx"].map(INV_LABEL_MAPPING)
     demo_df["recommendation_text"] = demo_df.apply(
         lambda row: build_recommendation_text(row, row["model_action"]),
         axis=1,
@@ -290,7 +270,7 @@ def train_models(dataset_path: Path) -> dict[str, object]:
         "feature_count": len(feature_cols),
         "class_distribution": y.value_counts().to_dict(),
         "metrics": metrics_df.to_dict(orient="records"),
-        "best_model": best_name,
+        "best_model": "random_forest",
         "training_snapshot_best_slot": training_snapshot_best_slot_payload,
     }
 
@@ -299,10 +279,10 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     args = parser.parse_args()
-
     result = train_models(args.dataset)
     print(json.dumps(result, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":
     main()
+

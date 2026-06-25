@@ -28,18 +28,11 @@ from .decision_model.decision_engine import (
     UNSAFE_WEATHER_CODES,
     add_decision_columns,
     build_recommendation_text,
+    calculate_dynamic_flow_rate,
+    derive_decision_action,
 )
 from .run_pipeline import run_weather_pipeline
 from . import database as db
-from .weather_override import (
-    OVERRIDE_IMAGE_DIR,
-    available_conditions,
-    classify_weather_image,
-    apply_override_to_weather,
-    recalculate_decision,
-    save_override_image,
-    WEATHER_CONDITIONS,
-)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -57,10 +50,26 @@ VIETNAM_TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 PIPELINE_LOCK = threading.Lock()
 AI_TRAINING_LOCK = threading.Lock()
 
+MODEL_PAYLOAD = None
+
+def load_model():
+    global MODEL_PAYLOAD
+    if MODEL_PATH.exists():
+        try:
+            import joblib
+            MODEL_PAYLOAD = joblib.load(MODEL_PATH)
+            print(f"Loaded drone decision model from {MODEL_PATH}")
+        except Exception as e:
+            print(f"Failed to load model from {MODEL_PATH}: {e}")
+
+# Initial load
+load_model()
+
 THRESHOLD_BOUNDS = {
     "max_wind_speed": (1.0, 80.0),
     "max_wind_gust": (1.0, 120.0),
     "max_rain_probability": (0.0, 100.0),
+    "max_rain_hourly": (0.0, 50.0),
     "return_to_charging_rain_probability": (0.0, 100.0),
     "max_cloud_cover": (0.0, 100.0),
     "min_visibility": (0.0, 50_000.0),
@@ -612,24 +621,7 @@ def get_ai_training_image(filename: str) -> FileResponse:
     return FileResponse(image_path)
 
 
-@app.post("/api/ai-training/simulate-images")
-def simulate_ai_training_images(location: str | None = None) -> dict[str, Any]:
-    def runner() -> None:
-        from .data_pipeline.simulate_images import main as simulate_images_main
-
-        return simulate_images_main()
-
-    return run_ai_step("simulate_images", runner, location)
-
-
-@app.post("/api/ai-training/extract-features")
-def extract_ai_training_features(location: str | None = None) -> dict[str, Any]:
-    def runner() -> None:
-        from .data_pipeline.extract_features import main as extract_features_main
-
-        return extract_features_main()
-
-    return run_ai_step("extract_features", runner, location)
+# Image simulation and feature extraction are removed from the MVP.
 
 
 @app.post("/api/ai-training/train")
@@ -639,7 +631,9 @@ def train_ai_model(location: str | None = None) -> dict[str, Any]:
         from .decision_model.train_decision_model import train_models
 
         merge_data_main()
-        return train_models(FINAL_TRAINING_DATA_PATH)
+        res = train_models(FINAL_TRAINING_DATA_PATH)
+        load_model()
+        return res
 
     return run_ai_step("train_model", runner, location)
 
@@ -822,260 +816,369 @@ def _auto_save_to_db(daily_df: pd.DataFrame, thresholds: DecisionThresholds) -> 
 
 
 # ══════════════════════════════════════════════════════════════
-# WEATHER OVERRIDE ENDPOINTS
+# 3-LAYER DECISION ENGINE AND CHAT ENDPOINTS
 # ══════════════════════════════════════════════════════════════
 
-@app.get("/api/weather-override/conditions")
-def get_override_conditions() -> list[dict[str, str]]:
-    """List all selectable weather conditions for the override form."""
-    return available_conditions()
+RISK_WEIGHTS = {
+    "TAKE_OFF": 0,
+    "DELAY_FLIGHT": 1,
+    "LOCK_SPRAY": 2,
+    "RETURN_TO_CHARGING": 3
+}
 
+def get_risk_level_from_action(action: str) -> str:
+    if action in {"LOCK_SPRAY", "RETURN_TO_CHARGING"}:
+        return "HIGH"
+    if action == "DELAY_FLIGHT":
+        return "MEDIUM"
+    return "LOW"
 
-@app.post("/api/weather-override/analyze")
-async def analyze_weather_image(
-    image: UploadFile = File(...),
-    location: str = Form(...),
-    timestamp: str = Form(...),
+def generate_xai_explanation(row: pd.Series, thresholds: DecisionThresholds) -> str:
+    reasons = []
+    wind = float(row.get("wind_speed_10m", 0))
+    gust = float(row.get("wind_gusts_10m", 0))
+    rain = float(row.get("precipitation", 0))
+    rain_prob = float(row.get("precipitation_probability", 0))
+    temp = float(row.get("temperature_2m", 0))
+    weather_code = int(row.get("weather_code", 0))
+    
+    if rain > thresholds.max_rain_hourly:
+        reasons.append(f"lượng mưa lớn ({rain:.1f} mm/h vượt quá ngưỡng an toàn {thresholds.max_rain_hourly:.1f} mm/h)")
+    if rain_prob > thresholds.max_rain_probability:
+        reasons.append(f"xác suất mưa cao ({rain_prob:.0f}% vượt quá ngưỡng an toàn {thresholds.max_rain_probability:.0f}%)")
+    if weather_code in UNSAFE_WEATHER_CODES:
+        reasons.append(f"mã thời tiết nguy hiểm ({weather_code})")
+    if wind > thresholds.max_wind_speed:
+        reasons.append(f"tốc độ gió cao ({wind:.1f} km/h vượt quá ngưỡng an toàn {thresholds.max_wind_speed:.1f} km/h)")
+    if gust > thresholds.max_wind_gust:
+        reasons.append(f"gió giật mạnh ({gust:.1f} km/h vượt quá ngưỡng an toàn {thresholds.max_wind_gust:.1f} km/h)")
+    if temp > thresholds.max_safe_temperature:
+        reasons.append(f"nhiệt độ quá nóng ({temp:.1f}°C vượt quá ngưỡng an toàn {thresholds.max_safe_temperature:.1f}°C)")
+        
+    if reasons:
+        return "Hạn chế bay do: " + ", ".join(reasons) + "."
+    return "Thời tiết hoàn hảo, không có cảnh báo an toàn nào bị vi phạm."
+
+def run_3_layer_decision_engine(
+    df: pd.DataFrame,
+    thresholds: DecisionThresholds,
+    unsafe_weather_codes: set[int] | frozenset[int],
+    farm_size_ha: float = 10.0,
+) -> list[dict[str, Any]]:
+    global MODEL_PAYLOAD
+    if MODEL_PAYLOAD is None:
+        load_model()
+        
+    has_model = (MODEL_PAYLOAD is not None)
+    if has_model:
+        feature_cols = MODEL_PAYLOAD["feature_columns"]
+        champion = MODEL_PAYLOAD["champion"]
+        challenger = MODEL_PAYLOAD["challenger"]
+        inv_label_mapping = MODEL_PAYLOAD["inv_label_mapping"]
+        
+        X = df[feature_cols].copy()
+        champ_preds = champion.predict(X)
+        champ_probs = champion.predict_proba(X)
+        chall_preds = challenger.predict(X)
+        chall_probs = challenger.predict_proba(X)
+    else:
+        champ_preds = []
+        champ_probs = []
+        chall_preds = []
+        chall_probs = []
+        inv_label_mapping = {}
+        
+    slots = []
+    n = len(df)
+    for i in range(n):
+        row = df.iloc[i]
+        
+        # Lớp 1 - Safety Net
+        l1_action = derive_decision_action(row, thresholds, unsafe_weather_codes)
+        
+        if has_model:
+            c_champ = inv_label_mapping[champ_preds[i]]
+            c_chall = inv_label_mapping[chall_preds[i]]
+            p_champ = float(champ_probs[i][champ_preds[i]])
+            p_chall = float(chall_probs[i][chall_preds[i]])
+        else:
+            c_champ = l1_action
+            c_chall = l1_action
+            p_champ = 1.0
+            p_chall = 1.0
+            
+        # Lớp 3 - Consensus Builder
+        was_conflict = (c_champ != c_chall)
+        if not was_conflict:
+            l3_action = c_champ
+        else:
+            if p_champ >= 0.85 and (p_champ - p_chall) >= 0.20:
+                l3_action = c_champ
+            else:
+                risk_champ = RISK_WEIGHTS.get(c_champ, 0)
+                risk_chall = RISK_WEIGHTS.get(c_chall, 0)
+                if risk_champ >= risk_chall:
+                    l3_action = c_champ
+                else:
+                    l3_action = c_chall
+                    
+        if l1_action != "TAKE_OFF":
+            final_decision = l1_action
+        else:
+            final_decision = l3_action
+            
+        slots.append({
+            "row": row,
+            "champion_pred": c_champ,
+            "champion_conf": p_champ,
+            "challenger_pred": c_chall,
+            "challenger_conf": p_chall,
+            "was_conflict": was_conflict,
+            "final_decision": final_decision,
+        })
+        
+    for i in range(n):
+        if slots[i]["final_decision"] == "TAKE_OFF":
+            left_ok = (i > 0 and slots[i-1]["final_decision"] == "TAKE_OFF")
+            right_ok = (i < n - 1 and slots[i+1]["final_decision"] == "TAKE_OFF")
+            if not (left_ok or right_ok):
+                slots[i]["final_decision"] = "DELAY_FLIGHT"
+                
+    for s in slots:
+        row = s["row"]
+        final_decision = s["final_decision"]
+        
+        risk_level = get_risk_level_from_action(final_decision)
+        s["risk_level"] = risk_level
+        s["xai_alert"] = generate_xai_explanation(row, thresholds)
+        
+        temp = float(row.get("temperature_2m", 0))
+        humidity = float(row.get("relative_humidity_2m", 100))
+        
+        if temp >= 36.0 and humidity < 40.0:
+            flow_rate_l_ha = 15.0
+        else:
+            flow_pct = calculate_dynamic_flow_rate(row, thresholds)
+            flow_rate_l_ha = round(flow_pct / 10.0, 2)
+            
+        total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
+        import math
+        sorties = math.ceil(total_liters / 30.0)
+        battery_cycles = sorties
+        
+        s["resource_regressor"] = {
+            "flow_rate_l_ha": flow_rate_l_ha,
+            "total_liters": total_liters,
+            "sorties": sorties,
+            "battery_cycles": battery_cycles,
+        }
+        
+    return slots
+
+def _auto_save_decisions_log_to_db(slots: list[dict[str, Any]]) -> None:
+    db_rows = []
+    for s in slots:
+        row = s["row"]
+        ts = str(row["timestamp_dt"].isoformat())
+        loc = str(row["location_name"])
+        weather_snapshot = {
+            "location_name": loc,
+            "temperature_2m": float(row.get("temperature_2m", 0)),
+            "relative_humidity_2m": float(row.get("relative_humidity_2m", 0)),
+            "precipitation_probability": float(row.get("precipitation_probability", 0)),
+            "precipitation": float(row.get("precipitation", 0)),
+            "cloud_cover": float(row.get("cloud_cover", 0)),
+            "visibility": float(row.get("visibility", 0)),
+            "wind_speed_10m": float(row.get("wind_speed_10m", 0)),
+            "wind_gusts_10m": float(row.get("wind_gusts_10m", 0)),
+            "weather_code": int(row.get("weather_code", 0)),
+            "evapotranspiration": float(row.get("evapotranspiration", 0)),
+            "soil_moisture_0_to_7cm": float(row.get("soil_moisture_0_to_7cm", 0)),
+        }
+        db_rows.append({
+            "timestamp": ts,
+            "weather_snapshot": weather_snapshot,
+            "champion_pred": s["champion_pred"],
+            "champion_conf": float(s["champion_conf"]),
+            "challenger_pred": s["challenger_pred"],
+            "challenger_conf": float(s["challenger_conf"]),
+            "final_decision": s["final_decision"],
+            "was_conflict": bool(s["was_conflict"]),
+            "was_human_overridden": False
+        })
+    if db_rows:
+        try:
+            client = db.get_client()
+            client.table("flight_decisions_log").insert(db_rows).execute()
+        except Exception as e:
+            print(f"Error saving to flight_decisions_log: {e}")
+
+@app.get("/api/dashboard/slots")
+def get_dashboard_slots(
+    location: str = "Dong Thap",
+    at: str | None = None,
+    farm_size_ha: float = 10.0,
 ) -> dict[str, Any]:
-    """
-    Step 1 of override flow: upload image → AI classifies → return suggestion.
-
-    The frontend should show the AI suggestion and let the user confirm or change.
-    """
-    if image.content_type and not image.content_type.startswith("image/"):
-        raise HTTPException(status_code=422, detail="File phai la hinh anh (jpg/png).")
-
-    contents = await image.read()
-    if len(contents) > 10 * 1024 * 1024:  # 10 MB limit
-        raise HTTPException(status_code=422, detail="Hinh anh qua lon (toi da 10MB).")
-
-    ext = Path(image.filename or "photo.jpg").suffix.lower() or ".jpg"
-    filename, full_path = save_override_image(contents, ext)
-
-    # AI classification
-    ai_result = classify_weather_image(str(full_path))
-
-    # Upload to Supabase Storage
+    source_path = latest_clean_dataset()
+    config = read_decision_config()
+    thresholds, unsafe_weather_codes = config_to_engine_args(config)
+    df = pd.read_csv(source_path)
+    df["timestamp_dt"] = pd.to_datetime(df["timestamp"])
+    
+    location_df = df[df["location_name"] == location].copy()
+    if location_df.empty:
+        available = sorted(df["location_name"].unique().tolist())
+        raise HTTPException(
+            status_code=404,
+            detail=f"Unknown location '{location}'. Available locations: {available}",
+        )
+        
+    reference_time = parse_reference_time(at)
+    current = pick_operational_slot(location_df, reference_time)
+    selected_date = current["timestamp_dt"].date()
+    daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
+    daily_df = daily_df.sort_values("timestamp_dt")
+    
+    slots = run_3_layer_decision_engine(daily_df, thresholds, unsafe_weather_codes, farm_size_ha)
+    
     try:
-        public_url = db.upload_image_to_storage(full_path, filename)
-    except Exception as exc:
-        print(f"Loi upload ảnh len Supabase Storage: {exc}")
-        public_url = f"/api/weather-override/image/{filename}"
-
-    # Load the original API weather for this slot
-    original_weather = _get_original_weather_for_slot(location, timestamp)
-
+        _auto_save_decisions_log_to_db(slots)
+    except Exception as e:
+        print(f"Auto-save to decisions log failed: {e}")
+        
+    formatted_slots = []
+    for s in slots:
+        row = s["row"]
+        formatted_slots.append({
+            "timestamp": row["timestamp_dt"].isoformat(),
+            "weather": {
+                "temperature": as_number(row["temperature_2m"]),
+                "humidity": as_number(row["relative_humidity_2m"], 0),
+                "precipitation": as_number(row["precipitation"]),
+                "precipitation_probability": as_number(row["precipitation_probability"], 0),
+                "wind_speed": as_number(row["wind_speed_10m"]),
+                "wind_gust": as_number(row["wind_gusts_10m"]),
+                "cloud_cover": as_number(row["cloud_cover"], 0),
+                "visibility": as_number(row["visibility"], 0),
+                "weather_code": int(row["weather_code"]),
+                "weather_description": str(row.get("weather_description", "")),
+                "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
+                "soil_moisture": as_number(row.get("soil_moisture_0_to_7cm", 0.0), 2),
+            },
+            "decision_engine": {
+                "champion_prediction": s["champion_pred"],
+                "champion_confidence": as_number(s["champion_conf"], 2),
+                "challenger_prediction": s["challenger_pred"],
+                "challenger_confidence": as_number(s["challenger_conf"], 2),
+                "was_conflict": s["was_conflict"],
+                "final_decision": s["final_decision"],
+                "risk_level": s["risk_level"],
+                "xai_alert": s["xai_alert"],
+                "resource_regressor": s["resource_regressor"],
+            }
+        })
+        
     return {
-        "override_image": {
-            "filename": filename,
-            "url": public_url,
-        },
-        "ai_suggestion": {
-            "condition": ai_result["suggested_condition"],
-            "confidence": ai_result["confidence"],
-            "all_scores": ai_result.get("all_scores", {}),
-            "message": ai_result.get("message"),
-        },
-        "available_conditions": available_conditions(),
-        "original_weather": original_weather,
         "location": location,
-        "timestamp": timestamp,
+        "date": str(selected_date),
+        "source": source_path.name,
+        "slots": formatted_slots
     }
 
-
-@app.post("/api/weather-override/confirm")
-def confirm_weather_override(
-    payload: dict[str, Any] = Body(...),
-) -> dict[str, Any]:
-    """
-    Step 2 of override flow: user confirms/changes the condition → system
-    recalculates and saves everything to DB.
-
-    Expected payload::
-
-        {
-            "location": "Dong Thap",
-            "timestamp": "2026-06-16T10:00",
-            "image_filename": "override_20260616_..._abc123.jpg",
-            "ai_suggested_condition": "rainy",
-            "ai_confidence": 0.87,
-            "user_final_condition": "cloudy",   // user changed it
-            "user_notes": "Troi co may nhung chua mua"  // optional
-        }
-    """
-    location = payload.get("location")
-    timestamp = payload.get("timestamp")
-    image_filename = payload.get("image_filename", "")
-    image_url = payload.get("image_url", "")
-    ai_suggested = payload.get("ai_suggested_condition")
-    ai_confidence = float(payload.get("ai_confidence", 0))
-    user_condition = payload.get("user_final_condition")
-    user_notes = payload.get("user_notes", "")
-
-    if not location or not timestamp or not user_condition:
-        raise HTTPException(
-            status_code=422,
-            detail="Thieu truong bat buoc: location, timestamp, user_final_condition.",
-        )
-    if user_condition not in WEATHER_CONDITIONS:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Dieu kien khong hop le. Chon tu: {list(WEATHER_CONDITIONS.keys())}",
-        )
-
-    # Get original weather from API data
-    original = _get_original_weather_for_slot(location, timestamp)
-
-    # Calculate PREVIOUS decision (from API data)
-    prev_decision = recalculate_decision(original)
-
-    # Apply override and recalculate
-    overridden = apply_override_to_weather(original, user_condition)
-    new_decision = recalculate_decision(overridden)
-
-    user_accepted_ai = (
-        ai_suggested is not None and user_condition == ai_suggested
-    )
-
-    condition_info = WEATHER_CONDITIONS[user_condition]
-
-    # Save override to DB
-    override_record = db.create_weather_override({
-        "location_name": location,
-        "override_timestamp": timestamp,
-        "image_filename": image_filename,
-        "image_url": image_url or (f"/api/weather-override/image/{image_filename}" if image_filename else None),
-        "ai_suggested_condition": ai_suggested,
-        "ai_confidence": ai_confidence,
-        "user_final_condition": user_condition,
-        "user_accepted_ai": user_accepted_ai,
-        "user_notes": user_notes or None,
-        "original_api_weather_code": int(original.get("weather_code", 0)),
-        "original_api_description": str(original.get("weather_description", "")),
-        "override_weather_code": condition_info["weather_code"],
-        "override_description": condition_info["weather_description"],
-        "previous_decision": prev_decision["decision_action"],
-        "previous_flyability": prev_decision["flyability_score"],
-        "new_decision": new_decision["decision_action"],
-        "new_flyability": new_decision["flyability_score"],
-    })
-
-    # Also save the updated flight log with override reference
-    override_id = override_record.get("id")
-    db.save_flight_log({
-        "location_name": location,
-        "flight_timestamp": timestamp,
-        "decision_action": new_decision["decision_action"],
-        "risk_level": new_decision["risk_level"],
-        "flyability_score": new_decision["flyability_score"],
-        "dynamic_flow_rate_pct": new_decision["dynamic_flow_rate_pct"],
-        "crop_condition": new_decision["crop_condition"],
-        "recommendation_text": new_decision["recommendation_text"],
-        "weather_source": "user_override",
-        "override_id": override_id,
-    })
-
-    decision_changed = prev_decision["decision_action"] != new_decision["decision_action"]
-
-    return {
-        "status": "ok",
-        "override_id": override_id,
-        "user_accepted_ai": user_accepted_ai,
-        "decision_changed": decision_changed,
-        "previous": {
-            "weather_code": int(original.get("weather_code", 0)),
-            "weather_description": str(original.get("weather_description", "")),
-            "decision_action": prev_decision["decision_action"],
-            "flyability_score": prev_decision["flyability_score"],
-            "risk_level": prev_decision["risk_level"],
-        },
-        "new": {
-            "weather_code": condition_info["weather_code"],
-            "weather_description": condition_info["weather_description"],
-            "decision_action": new_decision["decision_action"],
-            "flyability_score": new_decision["flyability_score"],
-            "risk_level": new_decision["risk_level"],
-            "recommendation_text": new_decision["recommendation_text"],
-        },
-    }
-
-
-def _get_original_weather_for_slot(
-    location: str, timestamp: str,
-) -> dict[str, Any]:
-    """Look up the API weather data for a specific location + timestamp."""
+@app.post("/api/chat/ask")
+def chat_ask(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    question = payload.get("question") or payload.get("message", "")
+    if not question:
+        raise HTTPException(status_code=422, detail="Question/message field is required.")
+        
     try:
-        df, _, config, thresholds = load_forecast()
-        loc_df = df[df["location_name"] == location].copy()
-        if loc_df.empty:
-            return _default_weather_params(location, timestamp)
-
-        ref = parse_reference_time(timestamp)
-        slot = pick_operational_slot(loc_df, ref)
-        return {
-            "location_name": location,
-            "timestamp": timestamp,
-            "temperature_2m": float(slot.get("temperature_2m", 30)),
-            "relative_humidity_2m": float(slot.get("relative_humidity_2m", 70)),
-            "precipitation_probability": float(slot.get("precipitation_probability", 0)),
-            "precipitation": float(slot.get("precipitation", 0)),
-            "cloud_cover": float(slot.get("cloud_cover", 50)),
-            "visibility": float(slot.get("visibility", 10000)),
-            "wind_speed_10m": float(slot.get("wind_speed_10m", 10)),
-            "wind_gusts_10m": float(slot.get("wind_gusts_10m", 15)),
-            "weather_code": int(slot.get("weather_code", 1000)),
-            "weather_description": str(slot.get("weather_description", "")),
-        }
-    except Exception:
-        return _default_weather_params(location, timestamp)
-
-
-def _default_weather_params(location: str, timestamp: str) -> dict[str, Any]:
-    """Fallback weather parameters when no forecast is available."""
+        client = db.get_client()
+        res = client.table("flight_decisions_log").select("*").order("timestamp", desc=True).limit(100).execute()
+        rows = res.data or []
+    except Exception as e:
+        print(f"Error querying flight_decisions_log for chat: {e}")
+        rows = []
+        
+    q_lower = question.lower()
+    location = None
+    if "đồng tháp" in q_lower or "dong thap" in q_lower:
+        location = "Dong Thap"
+    elif "cần thơ" in q_lower or "can tho" in q_lower:
+        location = "Can Tho"
+    elif "an giang" in q_lower:
+        location = "An Giang"
+    elif "long an" in q_lower:
+        location = "Long An"
+    elif "tiền giang" in q_lower or "tien giang" in q_lower:
+        location = "Tien Giang"
+        
+    matched_rows = []
+    for r in rows:
+        snapshot = r.get("weather_snapshot", {})
+        row_loc = snapshot.get("location_name")
+        if location and row_loc != location:
+            continue
+        matched_rows.append(r)
+        
+    matched_rows = sorted(matched_rows, key=lambda x: x["timestamp"], reverse=True)
+    
+    if not matched_rows:
+        if location:
+            answer = f"Tôi không tìm thấy lịch sử quyết định bay nào được ghi nhận cho địa điểm {location} trong cơ sở dữ liệu."
+        else:
+            answer = "Tôi không tìm thấy lịch sử quyết định bay nào trong cơ sở dữ liệu hiện tại."
+    else:
+        latest = matched_rows[0]
+        ts_str = latest["timestamp"]
+        try:
+            dt = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            dt_vietnam = dt.astimezone(VIETNAM_TZ)
+            time_formatted = dt_vietnam.strftime("%H:%M ngày %d/%m/%Y")
+        except Exception:
+            time_formatted = ts_str
+            
+        snap = latest.get("weather_snapshot", {})
+        loc_name = snap.get("location_name", "không rõ địa điểm")
+        final_dec = latest.get("final_decision", "UNKNOWN")
+        champ_pred = latest.get("champion_pred", "UNKNOWN")
+        champ_conf = latest.get("champion_conf", 0.0) * 100
+        chall_pred = latest.get("challenger_pred", "UNKNOWN")
+        chall_conf = latest.get("challenger_conf", 0.0) * 100
+        was_conflict = latest.get("was_conflict", False)
+        
+        temp = snap.get("temperature_2m", 0.0)
+        humidity = snap.get("relative_humidity_2m", 0.0)
+        wind = snap.get("wind_speed_10m", 0.0)
+        gust = snap.get("wind_gusts_10m", 0.0)
+        rain = snap.get("precipitation", 0.0)
+        rain_prob = snap.get("precipitation_probability", 0.0)
+        
+        answer = f"Tại **{loc_name}** vào lúc **{time_formatted}**:\n"
+        answer += f"- **Quyết định bay cuối cùng**: `{final_dec}`\n"
+        
+        if was_conflict:
+            answer += f"- **Xử lý xung đột**: Mô hình Champion đề xuất `{champ_pred}` ({champ_conf:.1f}%), trong khi Challenger đề xuất `{chall_pred}` ({chall_conf:.1f}%). Hệ thống đã áp dụng quy tắc giải quyết xung đột.\n"
+        else:
+            answer += f"- **Dự báo của AI**: Cả hai mô hình đều đồng thuận đề xuất `{champ_pred}` với độ tin cậy của Champion là {champ_conf:.1f}%.\n"
+            
+        answer += f"- **Thông số thời tiết**: Nhiệt độ {temp:.1f}°C, Độ ẩm {humidity:.0f}%, Tốc độ gió {wind:.1f} km/h (gió giật {gust:.1f} km/h), Lượng mưa {rain:.1f} mm/h (Xác suất mưa {rain_prob:.0f}%).\n"
+        
+        if final_dec == "TAKE_OFF":
+            answer += "- **Chi tiết**: Điều kiện thời tiết rất thuận lợi và an toàn cho drone hoạt động. Không vi phạm bất kỳ ngưỡng vật lý nào."
+        elif final_dec == "LOCK_SPRAY":
+            answer += f"- **Chi tiết**: Lệnh phun thuốc bị KHÓA (`LOCK_SPRAY`) chủ yếu do tốc độ gió ({wind:.1f} km/h) hoặc gió giật ({gust:.1f} km/h) vượt quá ngưỡng an toàn để đảm bảo drone bay ổn định và tránh trôi thuốc."
+        elif final_dec == "RETURN_TO_CHARGING":
+            answer += f"- **Chi tiết**: Drone được yêu cầu QUAY VỀ TRẠM SẠC (`RETURN_TO_CHARGING`) ngay lập tức do có mưa thực tế ({rain:.1f} mm/h) hoặc xác suất mưa quá cao ({rain_prob:.0f}%), nhằm tránh rủi ro hỏng hóc pin/mạch điện do nước mưa."
+        else:
+            answer += f"- **Chi tiết**: Chuyến bay bị TẠM HOÃN (`DELAY_FLIGHT`) do nhiệt độ cao ({temp:.1f}°C > 35°C) hoặc xác suất mưa ở mức trung bình."
+            
+        if len(matched_rows) > 1:
+            answer += f"\n\n*(Lưu ý: Tôi cũng tìm thấy {len(matched_rows) - 1} quyết định bay khác trong lịch sử của {loc_name if location else 'các địa điểm'}.)*"
+            
     return {
-        "location_name": location,
-        "timestamp": timestamp,
-        "temperature_2m": 30.0,
-        "relative_humidity_2m": 70.0,
-        "precipitation_probability": 0.0,
-        "precipitation": 0.0,
-        "cloud_cover": 50.0,
-        "visibility": 10000.0,
-        "wind_speed_10m": 10.0,
-        "wind_gusts_10m": 15.0,
-        "weather_code": 1000,
-        "weather_description": "Clear",
+        "answer": answer,
+        "retrieved_logs_count": len(matched_rows)
     }
-
-
-@app.get("/api/weather-overrides")
-def list_weather_overrides(
-    location: str | None = None,
-    limit: int = 50,
-) -> dict[str, Any]:
-    """List all weather overrides, newest first."""
-    overrides = db.get_overrides(location=location, limit=limit)
-    return {"overrides": overrides, "total": len(overrides)}
-
-
-@app.get("/api/weather-override/image/{filename}")
-def get_override_image(filename: str) -> FileResponse:
-    """Serve a user-uploaded weather override image."""
-    image_path = (OVERRIDE_IMG_DIR / filename).resolve()
-    if (
-        image_path.parent != OVERRIDE_IMG_DIR.resolve()
-        or image_path.suffix.lower() not in IMAGE_SUFFIXES
-    ):
-        raise HTTPException(status_code=404, detail="Image not found.")
-    if not image_path.exists():
-        raise HTTPException(status_code=404, detail="Image not found.")
-    return FileResponse(image_path)
-
-
-@app.get("/api/weather-override/stats")
-def get_override_stats() -> dict[str, Any]:
-    """AI suggestion accuracy statistics."""
-    return db.get_override_accuracy_stats()
 
 
 # ══════════════════════════════════════════════════════════════

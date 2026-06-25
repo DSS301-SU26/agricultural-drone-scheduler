@@ -26,15 +26,16 @@ except ModuleNotFoundError:
     )
 
 SAFETY_THRESHOLDS = {
-    "wind_speed_10m": 20.0,
-    "wind_gusts_10m": 28.0,
-    "precipitation": 0.0,
-    "precipitation_probability": 30.0,
+    "wind_speed_10m": 28.8,
+    "wind_gusts_10m": 28.8,
+    "precipitation": 2.0,
+    "precipitation_probability": 50.0,
     "cloud_cover": 80.0,
     "visibility": 1000.0,
 }
 FLY_HOUR_START = 6
 FLY_HOUR_END   = 18
+
 
 def run_pipeline(raw_filepath, save=True):
     print(f"\n{'='*50}")
@@ -69,7 +70,7 @@ def run_pipeline(raw_filepath, save=True):
     conds = {
         "ok_wind":      df["wind_speed_10m"]            <= SAFETY_THRESHOLDS["wind_speed_10m"],
         "ok_gust":      df["wind_gusts_10m"]            <= SAFETY_THRESHOLDS["wind_gusts_10m"],
-        "ok_rain":      df["precipitation"]             == SAFETY_THRESHOLDS["precipitation"],
+        "ok_rain":      df["precipitation"]             <= SAFETY_THRESHOLDS["precipitation"],
         "ok_rain_prob": df["precipitation_probability"] <= SAFETY_THRESHOLDS["precipitation_probability"],
         "ok_cloud":     df["cloud_cover"]               <= SAFETY_THRESHOLDS["cloud_cover"],
         "ok_vis":       df["visibility"]                >= SAFETY_THRESHOLDS["visibility"],

@@ -1,4 +1,5 @@
 import os
+import time
 import requests
 import pandas as pd
 import argparse
@@ -7,9 +8,6 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent.parent / ".env")
-
-API_KEY  = os.getenv("WEATHERAPI_KEY")
-BASE_URL = "http://api.weatherapi.com/v1/forecast.json"
 
 FARM_LOCATIONS = [
     {"name": "Dong Thap",   "latitude": 10.4939, "longitude": 105.6882},
@@ -21,77 +19,152 @@ FARM_LOCATIONS = [
     {"name": "Ha Noi",      "latitude": 21.0285, "longitude": 105.8542},
 ]
 
-UNSAFE_CONDITION_CODES = {
-    1087, 1273, 1276, 1279, 1282,
-    1192, 1195, 1201, 1243, 1246,
-    1135, 1147,
-}
-
-
 def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
-    global API_KEY
-    if not API_KEY:
-        load_dotenv(Path(__file__).parent.parent.parent / ".env")
-        API_KEY = os.getenv("WEATHERAPI_KEY")
-    if not API_KEY:
-        raise EnvironmentError(
-            "Thieu WEATHERAPI_KEY trong .env\n"
-            "  -> Dang ky tai weatherapi.com roi them key vao .env"
-        )
-
+    """
+    Fetch weather forecast from Open-Meteo with 5s timeout, 3 retries, exponential backoff,
+    linear interpolation, and fallback to OpenWeatherMap or generated data.
+    """
+    base_url = "http://api.open-meteo.com/v1/forecast"
     params = {
-        "key":    API_KEY,
-        "q":      f"{location['latitude']},{location['longitude']}",
-        "days":   min(days, 3),
-        "aqi":    "no",
-        "alerts": "no",
+        "latitude": location["latitude"],
+        "longitude": location["longitude"],
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,weather_code,evapotranspiration,soil_moisture_0_to_7cm",
+        "timezone": "Asia/Ho_Chi_Minh",
+        "forecast_days": min(days, 7)
     }
 
-    try:
-        resp = requests.get(BASE_URL, params=params, timeout=15)
-        resp.raise_for_status()
-    except requests.exceptions.HTTPError as e:
-        print(f"  [HTTP ERROR] {location['name']}: {e}")
-        return pd.DataFrame()
-    except Exception as e:
-        print(f"  [ERROR] {location['name']}: {e}")
-        return pd.DataFrame()
+    # Circuit Breaker with 3 Retries and Exponential Backoff
+    success = False
+    data = None
+    for attempt in range(3):
+        try:
+            resp = requests.get(base_url, params=params, timeout=5)
+            resp.raise_for_status()
+            data = resp.json()
+            success = True
+            break
+        except Exception as e:
+            wait_time = 2 ** attempt
+            print(f"  [Attempt {attempt+1} Failed] {location['name']}: {e}. Retrying in {wait_time}s...")
+            time.sleep(wait_time)
 
-    data = resp.json()
-    rows = []
+    # Fallback Mechanism
+    if not success or not data:
+        print(f"  [Fallback Activated] Fetching fallback data for {location['name']}...")
+        # Check if we can use OpenWeatherMap if key exists, otherwise generate mock data
+        owm_key = os.getenv("OPENWEATHERMAP_KEY")
+        if owm_key:
+            try:
+                # Basic OWM call
+                owm_url = "https://api.openweathermap.org/data/2.5/forecast"
+                owm_params = {
+                    "lat": location["latitude"],
+                    "lon": location["longitude"],
+                    "appid": owm_key,
+                    "units": "metric"
+                }
+                resp = requests.get(owm_url, params=owm_params, timeout=5)
+                resp.raise_for_status()
+                owm_data = resp.json()
+                
+                # Convert OWM to Open-Meteo structure
+                rows = []
+                for item in owm_data.get("list", []):
+                    dt = pd.to_datetime(item.get("dt"), unit='s')
+                    main = item.get("main", {})
+                    wind = item.get("wind", {})
+                    rain = item.get("rain", {}).get("3h", 0.0) / 3.0 # convert 3h to hourly approx
+                    clouds = item.get("clouds", {}).get("all", 0.0)
+                    weather = item.get("weather", [{}])[0]
+                    rows.append({
+                        "location_name": location["name"],
+                        "latitude": location["latitude"],
+                        "longitude": location["longitude"],
+                        "timestamp": dt,
+                        "source": "OpenWeatherMap",
+                        "temperature_2m": main.get("temp"),
+                        "relative_humidity_2m": main.get("humidity"),
+                        "precipitation_probability": item.get("pop", 0.0) * 100,
+                        "precipitation": rain,
+                        "cloud_cover": clouds,
+                        "visibility": item.get("visibility", 10000.0),
+                        "wind_speed_10m": wind.get("speed", 0.0) * 3.6, # m/s to km/h
+                        "wind_gusts_10m": wind.get("gust", wind.get("speed", 0.0)) * 3.6,
+                        "weather_code": weather.get("id", 800),
+                        "weather_description": weather.get("description", ""),
+                        "evapotranspiration": 0.1, # fallback
+                        "soil_moisture_0_to_7cm": 0.25 # fallback
+                    })
+                return pd.DataFrame(rows)
+            except Exception as e:
+                print(f"  [OWM Fallback Failed] {e}. Falling back to simulated weather data.")
 
-    for day in data.get("forecast", {}).get("forecastday", []):
-        for hour in day.get("hour", []):
-            code = hour.get("condition", {}).get("code", 0)
+        # Fallback to simulated data generator
+        print(f"  [Mock Fallback] Generating simulated forecast for {location['name']}...")
+        dates = pd.date_range(start=datetime.now().replace(minute=0, second=0, microsecond=0), periods=days*24, freq='h')
+        rows = []
+        for dt in dates:
+            # Generate deterministic weather patterns based on hour of day
+            hour = dt.hour
+            temp = 25.0 + 7.0 * (1.0 - abs(hour - 14) / 12.0) # peak at 14:00
+            humidity = 90.0 - 30.0 * (1.0 - abs(hour - 14) / 12.0)
+            wind = 5.0 + 8.0 * (1.0 - abs(hour - 15) / 12.0)
             rows.append({
-                "location_name":             location["name"],
-                "latitude":                  location["latitude"],
-                "longitude":                 location["longitude"],
-                "timestamp":                 pd.to_datetime(hour["time"]),
-                "source":                    "WeatherAPI",
-                "temperature_2m":            hour.get("temp_c"),
-                "relative_humidity_2m":      hour.get("humidity"),
-                "precipitation_probability": hour.get("chance_of_rain"),
-                "precipitation":             hour.get("precip_mm"),
-                "cloud_cover":               hour.get("cloud"),
-                "visibility":                hour.get("vis_km", 0) * 1000,
-                "wind_speed_10m":            hour.get("wind_kph"),
-                "wind_gusts_10m":            hour.get("gust_kph"),
-                "weather_code":              code,
-                "weather_description":       hour.get("condition", {}).get("text", ""),
+                "location_name": location["name"],
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+                "timestamp": dt,
+                "source": "Simulated",
+                "temperature_2m": temp,
+                "relative_humidity_2m": humidity,
+                "precipitation_probability": 10.0 if hour < 12 else 45.0,
+                "precipitation": 0.0 if hour < 15 else 0.5,
+                "cloud_cover": 20.0 + 5.0 * hour,
+                "visibility": 10000.0,
+                "wind_speed_10m": wind,
+                "wind_gusts_10m": wind * 1.3,
+                "weather_code": 1000 if hour < 12 else 1087,
+                "weather_description": "Clear" if hour < 12 else "Thundery",
+                "evapotranspiration": 0.05 + 0.02 * (hour / 24.0),
+                "soil_moisture_0_to_7cm": 0.3
             })
+        return pd.DataFrame(rows)
 
-    if not rows:
-        return pd.DataFrame()
+    # Process Open-Meteo response
+    hourly = data.get("hourly", {})
+    times = hourly.get("time", [])
+    rows = []
+    for i, t in enumerate(times):
+        rows.append({
+            "location_name": location["name"],
+            "latitude": location["latitude"],
+            "longitude": location["longitude"],
+            "timestamp": pd.to_datetime(t),
+            "source": "Open-Meteo",
+            "temperature_2m": hourly.get("temperature_2m", [])[i],
+            "relative_humidity_2m": hourly.get("relative_humidity_2m", [])[i],
+            "precipitation": hourly.get("precipitation", [])[i],
+            "precipitation_probability": hourly.get("precipitation_probability", [])[i],
+            "cloud_cover": hourly.get("cloud_cover", [])[i],
+            "visibility": hourly.get("visibility", [])[i],
+            "wind_speed_10m": hourly.get("wind_speed_10m", [])[i],
+            "wind_gusts_10m": hourly.get("wind_gusts_10m", [])[i],
+            "weather_code": hourly.get("weather_code", [])[i],
+            "weather_description": f"Code {hourly.get('weather_code', [])[i]}",
+            "evapotranspiration": hourly.get("evapotranspiration", [])[i],
+            "soil_moisture_0_to_7cm": hourly.get("soil_moisture_0_to_7cm", [])[i]
+        })
 
-    return pd.DataFrame(rows)
-
+    df = pd.DataFrame(rows)
+    # Data Preprocessor: Linear Interpolation for any NaN/Null values
+    df = df.interpolate(method='linear', limit_direction='both')
+    return df
 
 def fetch_all_locations(locations: list, forecast_days: int = 3) -> pd.DataFrame:
     all_dfs = []
     print(f"\n{'='*52}")
-    print(f"  WeatherAPI Fetcher — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
-    print(f"  {min(forecast_days,3)} ngay | {len(locations)} dia diem")
+    print(f"  Open-Meteo Fetcher — {datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    print(f"  {min(forecast_days,7)} ngay | {len(locations)} dia diem")
     print(f"{'='*52}")
 
     for loc in locations:
@@ -111,7 +184,6 @@ def fetch_all_locations(locations: list, forecast_days: int = 3) -> pd.DataFrame
     print(f"\n  TONG: {len(combined)} ban ghi tu {len(all_dfs)} dia diem\n")
     return combined
 
-
 def save_raw(df: pd.DataFrame, output_dir: str = "data/raw") -> str:
     Path(output_dir).mkdir(parents=True, exist_ok=True)
     ts = datetime.now().strftime("%Y%m%d_%H%M")
@@ -119,7 +191,6 @@ def save_raw(df: pd.DataFrame, output_dir: str = "data/raw") -> str:
     df.to_csv(filename, index=False, encoding="utf-8-sig")
     print(f"  Saved: {filename}")
     return filename
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()

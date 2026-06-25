@@ -162,7 +162,8 @@ def main() -> None:
     slot["dynamic_flow_rate_pct"] = calculate_dynamic_flow_rate(slot)
 
     feature_cols = payload["feature_columns"]
-    model_action = payload["pipeline"].predict(slot[feature_cols].to_frame().T)[0]
+    pred_idx = payload["champion"].predict(slot[feature_cols].to_frame().T)[0]
+    model_action = payload["inv_label_mapping"][pred_idx]
     final_action = slot["decision_action"]
     policy_override = bool(model_action != final_action)
 

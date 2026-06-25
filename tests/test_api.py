@@ -12,6 +12,8 @@ from src.api import (
     run_pipeline_endpoint,
     train_ai_model,
     update_decision_config,
+    get_dashboard_slots,
+    chat_ask,
 )
 
 
@@ -50,7 +52,7 @@ class DashboardApiTest(unittest.TestCase):
                 patch("src.api.latest_clean_dataset", return_value=fixed_dataset),
             ):
                 baseline = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
-                self.assertEqual(baseline["current"]["decision_action"], "TAKE_OFF")
+                self.assertEqual(baseline["current"]["decision_action"], "DELAY_FLIGHT")
 
                 update_decision_config({"thresholds": {"max_wind_speed": 5}})
                 restricted = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
@@ -60,7 +62,7 @@ class DashboardApiTest(unittest.TestCase):
 
                 reset_decision_config()
                 restored = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
-                self.assertEqual(restored["current"]["decision_action"], "TAKE_OFF")
+                self.assertEqual(restored["current"]["decision_action"], "DELAY_FLIGHT")
 
     def test_ai_training_status_reads_existing_artifacts(self):
         payload = get_ai_training_status("Dong Thap")
@@ -122,6 +124,80 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(payload["clean_path"], fake_result["clean_path"])
         self.assertEqual(payload["steps"][0]["name"], "fetch_weather")
         self.assertIn("duration_seconds", payload)
+
+    def test_get_dashboard_slots_returns_correct_json(self):
+        payload = get_dashboard_slots(location="Dong Thap", at="2026-06-04T06:00:00", farm_size_ha=10.0)
+        self.assertEqual(payload["location"], "Dong Thap")
+        self.assertIn("date", payload)
+        self.assertGreater(len(payload["slots"]), 0)
+        
+        slot = payload["slots"][0]
+        self.assertIn("timestamp", slot)
+        self.assertIn("weather", slot)
+        self.assertIn("decision_engine", slot)
+        
+        weather = slot["weather"]
+        self.assertIn("temperature", weather)
+        self.assertIn("humidity", weather)
+        self.assertIn("precipitation", weather)
+        self.assertIn("precipitation_probability", weather)
+        self.assertIn("wind_speed", weather)
+        self.assertIn("wind_gust", weather)
+        self.assertIn("cloud_cover", weather)
+        self.assertIn("visibility", weather)
+        self.assertIn("weather_code", weather)
+        self.assertIn("weather_description", weather)
+        self.assertIn("evapotranspiration", weather)
+        self.assertIn("soil_moisture", weather)
+        
+        decision_engine = slot["decision_engine"]
+        self.assertIn("champion_prediction", decision_engine)
+        self.assertIn("champion_confidence", decision_engine)
+        self.assertIn("challenger_prediction", decision_engine)
+        self.assertIn("challenger_confidence", decision_engine)
+        self.assertIn("was_conflict", decision_engine)
+        self.assertIn("final_decision", decision_engine)
+        self.assertIn("risk_level", decision_engine)
+        self.assertIn("xai_alert", decision_engine)
+        
+        resource_regressor = decision_engine["resource_regressor"]
+        self.assertIn("flow_rate_l_ha", resource_regressor)
+        self.assertIn("total_liters", resource_regressor)
+        self.assertIn("sorties", resource_regressor)
+        self.assertIn("battery_cycles", resource_regressor)
+        self.assertEqual(resource_regressor["battery_cycles"], resource_regressor["sorties"])
+
+    def test_chat_ask_returns_vietnamese_answer(self):
+        fake_log = [{
+            "timestamp": "2026-06-25T10:00:00+07:00",
+            "weather_snapshot": {
+                "location_name": "Dong Thap",
+                "temperature_2m": 30.0,
+                "relative_humidity_2m": 72.0,
+                "precipitation_probability": 10.0,
+                "precipitation": 0.0,
+                "wind_speed_10m": 8.0,
+                "wind_gusts_10m": 14.0,
+                "weather_code": 1,
+            },
+            "champion_pred": "TAKE_OFF",
+            "champion_conf": 0.95,
+            "challenger_pred": "TAKE_OFF",
+            "challenger_conf": 0.92,
+            "final_decision": "TAKE_OFF",
+            "was_conflict": False,
+            "was_human_overridden": False
+        }]
+        
+        with patch("src.database.get_client") as mock_client_getter:
+            mock_client = mock_client_getter.return_value
+            mock_client.table.return_value.select.return_value.order.return_value.limit.return_value.execute.return_value.data = fake_log
+            
+            payload = chat_ask({"question": "Thời tiết ở Đồng Tháp thế nào?"})
+            self.assertIn("answer", payload)
+            self.assertIn("Dong Thap", payload["answer"])
+            self.assertIn("TAKE_OFF", payload["answer"])
+            self.assertGreater(payload["retrieved_logs_count"], 0)
 
 
 if __name__ == "__main__":

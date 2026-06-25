@@ -1,9 +1,5 @@
 """
 DSS decision rules used to label training data and explain model outputs.
-
-The machine-learning model learns this transparent decision policy from
-historical/simulated data, while these helpers keep the demo explainable for
-DSS301 reporting.
 """
 from __future__ import annotations
 
@@ -26,32 +22,20 @@ AGRICULTURAL_LOCATIONS = {
 
 @dataclass(frozen=True)
 class DecisionThresholds:
-    max_wind_speed: float = 20.0
-    max_wind_gust: float = 28.0
-    max_rain_probability: float = 30.0
-    return_to_charging_rain_probability: float = 70.0
+    max_wind_speed: float = 28.8  # 8 m/s in km/h
+    max_wind_gust: float = 28.8   # 8 m/s in km/h
+    max_rain_probability: float = 50.0  # Precipitation Probability > 50%
+    max_rain_hourly: float = 2.0        # Precipitation > 2 mm/h
+    return_to_charging_rain_probability: float = 50.0
     max_cloud_cover: float = 80.0
     min_visibility: float = 1_000.0
     max_safe_temperature: float = 35.0
 
 
 THRESHOLDS = DecisionThresholds()
-# The merged dataset can contain both Open-Meteo WMO codes and WeatherAPI
-# condition codes. Keep both lists so model labels match the source data.
 UNSAFE_WMO_CODES = {45, 48, 55, 63, 65, 71, 80, 81, 82, 95, 99}
 UNSAFE_WEATHERAPI_CODES = {
-    1087,
-    1135,
-    1147,
-    1192,
-    1195,
-    1201,
-    1243,
-    1246,
-    1273,
-    1276,
-    1279,
-    1282,
+    1087, 1135, 1147, 1192, 1195, 1201, 1243, 1246, 1273, 1276, 1279, 1282,
 }
 UNSAFE_WEATHER_CODES = UNSAFE_WMO_CODES | UNSAFE_WEATHERAPI_CODES
 
@@ -79,11 +63,16 @@ WEATHER_FEATURES = [
     "hour",
     "dayofweek",
     "month",
+    "evapotranspiration",
+    "soil_moisture_0_to_7cm"
 ]
 
-
-def image_feature_columns(columns: Iterable[str]) -> list[str]:
-    return [col for col in columns if col.startswith("img_feature_")]
+RISK_WEIGHTS = {
+    "TAKE_OFF": 0,
+    "DELAY_FLIGHT": 1,
+    "LOCK_SPRAY": 2,
+    "RETURN_TO_CHARGING": 3
+}
 
 
 def infer_crop_condition(row: pd.Series) -> str:
@@ -108,10 +97,15 @@ def calculate_dynamic_flow_rate(
 ) -> float:
     """
     Estimate spray/irrigation flow-rate percentage.
-
-    The rate is intentionally simple and explainable: dry conditions increase
-    flow, while wind, rain probability, and high heat reduce waste-prone output.
+    If Temp >= 36 and Humidity < 40, evapotranspiration is extreme -> requires 15 L/ha.
+    Otherwise, we scale from baseline.
     """
+    temp = float(row.get("temperature_2m", 0))
+    humidity = float(row.get("relative_humidity_2m", 100))
+    
+    if temp >= 36.0 and humidity < 40.0:
+        return 15.0  # liters/hectare (or treated as flow rate adjustment)
+    
     condition = row.get("crop_condition") or infer_crop_condition(row)
     flow = 100.0
 
@@ -120,7 +114,7 @@ def calculate_dynamic_flow_rate(
     elif condition == "WATER_STRESS":
         flow += 8.0
 
-    if float(row.get("temperature_2m", 0)) >= thresholds.max_safe_temperature:
+    if temp >= thresholds.max_safe_temperature:
         flow -= 12.0
     if float(row.get("wind_speed_10m", 0)) > 15:
         flow -= 10.0
@@ -139,7 +133,7 @@ def calculate_flyability_score(
     checks = {
         "wind": float(row.get("wind_speed_10m", 0)) <= thresholds.max_wind_speed,
         "gust": float(row.get("wind_gusts_10m", 0)) <= thresholds.max_wind_gust,
-        "rain": float(row.get("precipitation", 0)) == 0,
+        "rain": float(row.get("precipitation", 0)) <= thresholds.max_rain_hourly,
         "rain_prob": float(row.get("precipitation_probability", 0)) <= thresholds.max_rain_probability,
         "cloud": float(row.get("cloud_cover", 0)) <= thresholds.max_cloud_cover,
         "visibility": float(row.get("visibility", thresholds.min_visibility)) >= thresholds.min_visibility,
@@ -181,11 +175,12 @@ def derive_decision_action(
     weather_code = int(row.get("weather_code", 0))
     temp = float(row.get("temperature_2m", 0))
 
-    if rain > 0 or rain_prob >= thresholds.return_to_charging_rain_probability or weather_code in unsafe_weather_codes:
+    # Lớp 1 - Safety Rules (Water Resistance, Dynamic Wind Gust)
+    if rain > thresholds.max_rain_hourly or rain_prob > thresholds.max_rain_probability or weather_code in unsafe_weather_codes:
         return "RETURN_TO_CHARGING"
     if gust > thresholds.max_wind_gust or wind > thresholds.max_wind_speed:
         return "LOCK_SPRAY"
-    if rain_prob > thresholds.max_rain_probability or temp > thresholds.max_safe_temperature:
+    if temp > thresholds.max_safe_temperature:
         return "DELAY_FLIGHT"
     return "TAKE_OFF"
 
@@ -205,6 +200,9 @@ def add_decision_columns(
         lambda row: derive_decision_action(row, thresholds, unsafe_weather_codes),
         axis=1,
     )
+    # Apply bootstrap rule
+    enriched = apply_bootstrap_rule(enriched)
+    
     enriched["risk_level"] = enriched.apply(
         lambda row: derive_risk_level(row, str(row["decision_action"]), thresholds, unsafe_weather_codes),
         axis=1,
@@ -218,6 +216,24 @@ def add_decision_columns(
         * HARDWARE_DAMAGE_COST_USD
     )
     return enriched
+
+
+def apply_bootstrap_rule(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Bootstrap Rule: Minimum of 2 consecutive GREEN (TAKE_OFF) slots.
+    Any single isolated TAKE_OFF slot is demoted to DELAY_FLIGHT.
+    """
+    df = df.copy()
+    actions = df["decision_action"].tolist()
+    n = len(actions)
+    for i in range(n):
+        if actions[i] == "TAKE_OFF":
+            left_ok = (i > 0 and actions[i-1] == "TAKE_OFF")
+            right_ok = (i < n - 1 and actions[i+1] == "TAKE_OFF")
+            if not (left_ok or right_ok):
+                actions[i] = "DELAY_FLIGHT"
+    df["decision_action"] = actions
+    return df
 
 
 def build_recommendation_text(
@@ -271,3 +287,4 @@ def recommend_best_slot(df: pd.DataFrame, location_name: str | None = None) -> p
     ]
     ascending = [False, True, True, True]
     return safe_slots.sort_values(sort_cols, ascending=ascending).iloc[0]
+

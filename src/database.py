@@ -224,5 +224,16 @@ def upload_image_to_storage(file_path: Path | str, filename: str) -> str:
         file_options={"content-type": content_type}
     )
 
-    # Return public URL
     return client.storage.from_(bucket_name).get_public_url(filename)
+
+
+def save_decision_log(data: dict[str, Any]) -> dict[str, Any]:
+    """Insert a decision log row into flight_decisions_log."""
+    client = get_client()
+    result = (
+        client.table("flight_decisions_log")
+        .insert(data)
+        .execute()
+    )
+    return result.data[0] if result.data else {}
+
