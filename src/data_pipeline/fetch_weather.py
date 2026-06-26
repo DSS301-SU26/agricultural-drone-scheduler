@@ -157,7 +157,8 @@ def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
     # Data Preprocessor: Linear Interpolation for any NaN/Null values
-    df = df.interpolate(method='linear', limit_direction='both')
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    df[numeric_cols] = df[numeric_cols].interpolate(method='linear', limit_direction='both')
     return df
 
 def fetch_all_locations(locations: list, forecast_days: int = 3) -> pd.DataFrame:
