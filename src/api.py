@@ -910,6 +910,24 @@ def run_3_layer_decision_engine(
             # Max Prudence principle: take the lower probability
             flyability_score = min(p_champ, p_chall)
             
+        # --- Soft Penalty Layer (Safety Constraints) ---
+        wind = float(row.get("wind_speed_10m", 0))
+        gust = float(row.get("wind_gusts_10m", 0))
+        rain = float(row.get("precipitation", 0))
+        rain_prob = float(row.get("precipitation_probability", 0))
+        temp = float(row.get("temperature_2m", 0))
+        weather_code = int(row.get("weather_code", 0))
+        
+        # Heavy rain or dangerous weather -> Force score to 0.0 (unsafe for UAV electronics)
+        if rain > thresholds.max_rain_hourly or rain_prob > thresholds.max_rain_probability or weather_code in unsafe_weather_codes:
+            flyability_score = 0.0
+        # High wind or gust -> Apply heavy penalty (reduce score by 90%)
+        elif wind > thresholds.max_wind_speed or gust > thresholds.max_wind_gust:
+            flyability_score *= 0.10
+        # High temperature -> Apply moderate penalty (reduce score by 50% to delay flight)
+        elif temp > thresholds.max_safe_temperature:
+            flyability_score *= 0.50
+            
         is_safe_to_fly = (flyability_score > 0.80)
             
         slots.append({
