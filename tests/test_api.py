@@ -14,6 +14,7 @@ from src.api import (
     update_decision_config,
     get_dashboard_slots,
     chat_ask,
+    override_decision,
 )
 
 
@@ -204,6 +205,57 @@ class DashboardApiTest(unittest.TestCase):
             self.assertIn("Dong Thap", payload["answer"])
             self.assertIn("TAKE_OFF", payload["answer"])
             self.assertGreater(payload["retrieved_logs_count"], 0)
+
+    def test_manual_override_decision_recalculates_resources(self):
+        fake_id = "00000000-0000-0000-0000-000000000000"
+        fake_log = [{
+            "id": fake_id,
+            "timestamp": "2026-06-25T10:00:00+07:00",
+            "weather_snapshot": {
+                "location_name": "Dong Thap",
+                "temperature_2m": 37.0,
+                "relative_humidity_2m": 35.0,
+                "precipitation_probability": 10.0,
+                "precipitation": 0.0,
+                "wind_speed_10m": 8.0,
+                "wind_gusts_10m": 14.0,
+                "weather_code": 1,
+            },
+            "champion_pred": "LOCK_SPRAY",
+            "champion_conf": 0.95,
+            "challenger_pred": "LOCK_SPRAY",
+            "challenger_conf": 0.92,
+            "final_decision": "LOCK_SPRAY",
+            "was_conflict": False,
+            "was_human_overridden": False
+        }]
+        
+        updated_log = fake_log[0].copy()
+        updated_log["final_decision"] = "TAKE_OFF"
+        updated_log["was_human_overridden"] = True
+        
+        with patch("src.database.get_client") as mock_client_getter:
+            mock_client = mock_client_getter.return_value
+            mock_client.table.return_value.select.return_value.eq.return_value.execute.return_value.data = fake_log
+            mock_client.table.return_value.update.return_value.eq.return_value.execute.return_value.data = [updated_log]
+            
+            payload = override_decision(
+                id=fake_id,
+                payload={
+                    "override_decision": "TAKE_OFF",
+                    "user_notes": "Forcing takeoff despite high heat",
+                    "farm_size_ha": 10.0
+                }
+            )
+            
+            self.assertEqual(payload["status"], "ok")
+            self.assertEqual(payload["final_decision"], "TAKE_OFF")
+            self.assertTrue(payload["was_human_overridden"])
+            resources = payload["resource_regressor"]
+            self.assertEqual(resources["flow_rate_l_ha"], 15.0)
+            self.assertEqual(resources["total_liters"], 150.0)
+            self.assertEqual(resources["sorties"], 5)
+            self.assertEqual(resources["battery_cycles"], 5)
 
 
 if __name__ == "__main__":

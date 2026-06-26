@@ -977,43 +977,129 @@ def run_3_layer_decision_engine(
         
     return slots
 
-def _auto_save_decisions_log_to_db(slots: list[dict[str, Any]]) -> None:
-    db_rows = []
-    for s in slots:
+def _reconcile_and_save_decisions_log(
+    slots: list[dict[str, Any]], 
+    location: str, 
+    farm_size_ha: float, 
+    thresholds: DecisionThresholds
+) -> list[dict[str, Any]]:
+    try:
+        client = db.get_client()
+    except Exception as e:
+        print(f"Failed to get db client: {e}")
+        return slots
+
+    timestamps = [s["row"]["timestamp_dt"].isoformat() for s in slots]
+    if not timestamps:
+        return slots
+
+    try:
+        res = client.table("flight_decisions_log").select("*").in_("timestamp", timestamps).execute()
+        existing_rows = res.data or []
+    except Exception as e:
+        print(f"Failed to query existing decisions log: {e}")
+        existing_rows = []
+
+    existing_map = {}
+    for r in existing_rows:
+        snapshot = r.get("weather_snapshot", {})
+        loc_name = snapshot.get("location_name")
+        if loc_name == location:
+            try:
+                db_ts = pd.to_datetime(r["timestamp"]).replace(tzinfo=None).isoformat()
+                existing_map[db_ts] = r
+            except Exception as e:
+                print(f"Error parsing db timestamp: {e}")
+
+    to_insert_indices = []
+    to_insert_rows = []
+
+    for idx, s in enumerate(slots):
         row = s["row"]
-        ts = str(row["timestamp_dt"].isoformat())
-        loc = str(row["location_name"])
-        weather_snapshot = {
-            "location_name": loc,
-            "temperature_2m": float(row.get("temperature_2m", 0)),
-            "relative_humidity_2m": float(row.get("relative_humidity_2m", 0)),
-            "precipitation_probability": float(row.get("precipitation_probability", 0)),
-            "precipitation": float(row.get("precipitation", 0)),
-            "cloud_cover": float(row.get("cloud_cover", 0)),
-            "visibility": float(row.get("visibility", 0)),
-            "wind_speed_10m": float(row.get("wind_speed_10m", 0)),
-            "wind_gusts_10m": float(row.get("wind_gusts_10m", 0)),
-            "weather_code": int(row.get("weather_code", 0)),
-            "evapotranspiration": float(row.get("evapotranspiration", 0)),
-            "soil_moisture_0_to_7cm": float(row.get("soil_moisture_0_to_7cm", 0)),
-        }
-        db_rows.append({
-            "timestamp": ts,
-            "weather_snapshot": weather_snapshot,
-            "champion_pred": s["champion_pred"],
-            "champion_conf": float(s["champion_conf"]),
-            "challenger_pred": s["challenger_pred"],
-            "challenger_conf": float(s["challenger_conf"]),
-            "final_decision": s["final_decision"],
-            "was_conflict": bool(s["was_conflict"]),
-            "was_human_overridden": False
-        })
-    if db_rows:
+        ts_iso = pd.to_datetime(row["timestamp_dt"]).replace(tzinfo=None).isoformat()
+
+        db_row = existing_map.get(ts_iso)
+        if db_row:
+            s["id"] = db_row["id"]
+            s["was_human_overridden"] = db_row.get("was_human_overridden", False)
+            if s["was_human_overridden"]:
+                s["final_decision"] = db_row["final_decision"]
+                s["user_notes"] = db_row.get("weather_snapshot", {}).get("user_override_notes", "")
+                
+                override_decision = s["final_decision"]
+                if override_decision == "TAKE_OFF":
+                    temp = float(row.get("temperature_2m", 25.0))
+                    humidity = float(row.get("relative_humidity_2m", 70.0))
+                    
+                    if temp >= 36.0 and humidity < 40.0:
+                        flow_rate_l_ha = 15.0
+                    else:
+                        flow_pct = calculate_dynamic_flow_rate(row, thresholds)
+                        flow_rate_l_ha = round(flow_pct / 10.0, 2)
+                        
+                    total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
+                    import math
+                    sorties = math.ceil(total_liters / 30.0)
+                    battery_cycles = sorties
+                    
+                    s["resource_regressor"] = {
+                        "flow_rate_l_ha": flow_rate_l_ha,
+                        "total_liters": total_liters,
+                        "sorties": sorties,
+                        "battery_cycles": battery_cycles,
+                    }
+                else:
+                    s["resource_regressor"] = {
+                        "flow_rate_l_ha": 0.0,
+                        "total_liters": 0.0,
+                        "sorties": 0,
+                        "battery_cycles": 0,
+                    }
+                
+                s["risk_level"] = get_risk_level_from_action(override_decision)
+        else:
+            ts = str(row["timestamp_dt"].isoformat())
+            loc = str(row["location_name"])
+            weather_snapshot = {
+                "location_name": loc,
+                "temperature_2m": float(row.get("temperature_2m", 0)),
+                "relative_humidity_2m": float(row.get("relative_humidity_2m", 0)),
+                "precipitation_probability": float(row.get("precipitation_probability", 0)),
+                "precipitation": float(row.get("precipitation", 0)),
+                "cloud_cover": float(row.get("cloud_cover", 0)),
+                "visibility": float(row.get("visibility", 0)),
+                "wind_speed_10m": float(row.get("wind_speed_10m", 0)),
+                "wind_gusts_10m": float(row.get("wind_gusts_10m", 0)),
+                "weather_code": int(row.get("weather_code", 0)),
+                "evapotranspiration": float(row.get("evapotranspiration", 0)),
+                "soil_moisture_0_to_7cm": float(row.get("soil_moisture_0_to_7cm", 0)),
+            }
+            to_insert_rows.append({
+                "timestamp": ts,
+                "weather_snapshot": weather_snapshot,
+                "champion_pred": s["champion_pred"],
+                "champion_conf": float(s["champion_conf"]),
+                "challenger_pred": s["challenger_pred"],
+                "challenger_conf": float(s["challenger_conf"]),
+                "final_decision": s["final_decision"],
+                "was_conflict": bool(s["was_conflict"]),
+                "was_human_overridden": False
+            })
+            to_insert_indices.append(idx)
+
+    if to_insert_rows:
         try:
-            client = db.get_client()
-            client.table("flight_decisions_log").insert(db_rows).execute()
+            res_insert = client.table("flight_decisions_log").insert(to_insert_rows).execute()
+            inserted_data = res_insert.data or []
+            for i, row_data in enumerate(inserted_data):
+                if i < len(to_insert_indices):
+                    slot_idx = to_insert_indices[i]
+                    slots[slot_idx]["id"] = row_data.get("id")
+                    slots[slot_idx]["was_human_overridden"] = False
         except Exception as e:
-            print(f"Error saving to flight_decisions_log: {e}")
+            print(f"Error bulk-inserting flight_decisions_log: {e}")
+
+    return slots
 
 @app.get("/api/dashboard/slots")
 def get_dashboard_slots(
@@ -1044,14 +1130,17 @@ def get_dashboard_slots(
     slots = run_3_layer_decision_engine(daily_df, thresholds, unsafe_weather_codes, farm_size_ha)
     
     try:
-        _auto_save_decisions_log_to_db(slots)
+        slots = _reconcile_and_save_decisions_log(slots, location, farm_size_ha, thresholds)
     except Exception as e:
-        print(f"Auto-save to decisions log failed: {e}")
+        print(f"Reconciliation and auto-save failed: {e}")
         
     formatted_slots = []
     for s in slots:
         row = s["row"]
         formatted_slots.append({
+            "id": s.get("id"),
+            "was_human_overridden": s.get("was_human_overridden", False),
+            "user_notes": s.get("user_notes", ""),
             "timestamp": row["timestamp_dt"].isoformat(),
             "weather": {
                 "temperature": as_number(row["temperature_2m"]),
@@ -1227,4 +1316,113 @@ def get_weather_history(
         limit=limit,
     )
     return {"records": records, "total": len(records)}
+
+
+@app.post("/api/decisions/{id}/override")
+def override_decision(
+    id: str,
+    payload: dict[str, Any] = Body(...),
+) -> dict[str, Any]:
+    override_decision = payload.get("override_decision")
+    user_notes = payload.get("user_notes", "")
+    farm_size_ha = float(payload.get("farm_size_ha", 10.0))
+    was_human_overridden = payload.get("was_human_overridden", True)
+    
+    if not override_decision:
+        raise HTTPException(status_code=422, detail="Missing required field: override_decision")
+        
+    valid_decisions = {"TAKE_OFF", "DELAY_FLIGHT", "LOCK_SPRAY", "RETURN_TO_CHARGING"}
+    if override_decision not in valid_decisions:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid override_decision. Must be one of: {list(valid_decisions)}",
+        )
+        
+    try:
+        client = db.get_client()
+        res = client.table("flight_decisions_log").select("*").eq("id", id).execute()
+        records = res.data or []
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database lookup failed: {e}",
+        )
+        
+    if not records:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Flight decision log with ID '{id}' not found.",
+        )
+        
+    record = records[0]
+    
+    weather_snapshot = record.get("weather_snapshot", {})
+    if was_human_overridden:
+        if user_notes:
+            weather_snapshot["user_override_notes"] = user_notes
+    else:
+        weather_snapshot.pop("user_override_notes", None)
+        
+    update_data = {
+        "final_decision": override_decision,
+        "was_human_overridden": was_human_overridden,
+        "weather_snapshot": weather_snapshot,
+    }
+    
+    try:
+        res_update = client.table("flight_decisions_log").update(update_data).eq("id", id).execute()
+        updated_records = res_update.data or []
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Database update failed: {e}",
+        )
+        
+    if not updated_records:
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to update record in the database.",
+        )
+        
+    updated_record = updated_records[0]
+    
+    if override_decision == "TAKE_OFF":
+        temp = float(weather_snapshot.get("temperature_2m", 25.0))
+        humidity = float(weather_snapshot.get("relative_humidity_2m", 70.0))
+        
+        if temp >= 36.0 and humidity < 40.0:
+            flow_rate_l_ha = 15.0
+        else:
+            row_series = pd.Series(weather_snapshot)
+            config = read_decision_config()
+            thresholds, _ = config_to_engine_args(config)
+            flow_pct = calculate_dynamic_flow_rate(row_series, thresholds)
+            flow_rate_l_ha = round(flow_pct / 10.0, 2)
+            
+        total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
+        import math
+        sorties = math.ceil(total_liters / 30.0)
+        battery_cycles = sorties
+        
+        resource_regressor = {
+            "flow_rate_l_ha": flow_rate_l_ha,
+            "total_liters": total_liters,
+            "sorties": sorties,
+            "battery_cycles": battery_cycles,
+        }
+    else:
+        resource_regressor = {
+            "flow_rate_l_ha": 0.0,
+            "total_liters": 0.0,
+            "sorties": 0,
+            "battery_cycles": 0,
+        }
+        
+    return {
+        "status": "ok",
+        "id": id,
+        "final_decision": updated_record["final_decision"],
+        "was_human_overridden": updated_record["was_human_overridden"],
+        "resource_regressor": resource_regressor,
+    }
 
