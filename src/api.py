@@ -539,6 +539,8 @@ def serialize_slot(row: pd.Series, thresholds: DecisionThresholds) -> dict[str, 
         "decision_action": action,
         "schedule_eligible": action == "TAKE_OFF",
         "recommendation_text": build_recommendation_text(row, action, thresholds),
+        "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
+        "soil_moisture": as_number(row.get("soil_moisture_0_to_7cm", 0.0), 2),
     }
 
 
