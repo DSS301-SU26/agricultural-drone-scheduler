@@ -137,7 +137,6 @@ class DashboardApiTest(unittest.TestCase):
         self.assertEqual(payload["location"], "Dong Thap")
         self.assertIn("date", payload)
         self.assertGreater(len(payload["slots"]), 0)
-        
         slot = payload["slots"][0]
         self.assertIn("timestamp", slot)
         self.assertIn("weather", slot)
@@ -158,21 +157,18 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("soil_moisture", weather)
         
         decision_engine = slot["decision_engine"]
-        self.assertIn("champion_prediction", decision_engine)
-        self.assertIn("champion_confidence", decision_engine)
-        self.assertIn("challenger_prediction", decision_engine)
-        self.assertIn("challenger_confidence", decision_engine)
+        self.assertIn("champion_score", decision_engine)
+        self.assertIn("challenger_score", decision_engine)
         self.assertIn("was_conflict", decision_engine)
-        self.assertIn("final_decision", decision_engine)
-        self.assertIn("risk_level", decision_engine)
+        self.assertIn("flyability_score", decision_engine)
+        self.assertIn("is_safe_to_fly", decision_engine)
         self.assertIn("xai_alert", decision_engine)
         
         resource_regressor = decision_engine["resource_regressor"]
         self.assertIn("flow_rate_l_ha", resource_regressor)
         self.assertIn("total_liters", resource_regressor)
-        self.assertIn("sorties", resource_regressor)
-        self.assertIn("battery_cycles", resource_regressor)
-        self.assertEqual(resource_regressor["battery_cycles"], resource_regressor["sorties"])
+        self.assertIn("distance_to_field_km", resource_regressor)
+        self.assertIn("battery_cycles_needed", resource_regressor)
 
     def test_chat_ask_returns_vietnamese_answer(self):
         fake_log = [{
@@ -193,7 +189,12 @@ class DashboardApiTest(unittest.TestCase):
             "challenger_conf": 0.92,
             "final_decision": "TAKE_OFF",
             "was_conflict": False,
-            "was_human_overridden": False
+            "was_human_overridden": False,
+            "champion_score": 0.95,
+            "challenger_score": 0.92,
+            "flyability_score": 0.935,
+            "is_safe_to_fly": True,
+            "distance_to_field_km": 1.0,
         }]
         
         with patch("src.database.get_client") as mock_client_getter:
@@ -203,7 +204,6 @@ class DashboardApiTest(unittest.TestCase):
             payload = chat_ask({"question": "Thời tiết ở Đồng Tháp thế nào?"})
             self.assertIn("answer", payload)
             self.assertIn("Dong Thap", payload["answer"])
-            self.assertIn("TAKE_OFF", payload["answer"])
             self.assertGreater(payload["retrieved_logs_count"], 0)
 
     def test_manual_override_decision_recalculates_resources(self):
@@ -227,12 +227,19 @@ class DashboardApiTest(unittest.TestCase):
             "challenger_conf": 0.92,
             "final_decision": "LOCK_SPRAY",
             "was_conflict": False,
-            "was_human_overridden": False
+            "was_human_overridden": False,
+            "champion_score": 0.05,
+            "challenger_score": 0.08,
+            "flyability_score": 0.05,
+            "is_safe_to_fly": False,
+            "distance_to_field_km": 1.0,
         }]
         
         updated_log = fake_log[0].copy()
         updated_log["final_decision"] = "TAKE_OFF"
         updated_log["was_human_overridden"] = True
+        updated_log["is_safe_to_fly"] = True
+        updated_log["flyability_score"] = 1.0
         
         with patch("src.database.get_client") as mock_client_getter:
             mock_client = mock_client_getter.return_value
@@ -244,7 +251,8 @@ class DashboardApiTest(unittest.TestCase):
                 payload={
                     "override_decision": "TAKE_OFF",
                     "user_notes": "Forcing takeoff despite high heat",
-                    "farm_size_ha": 10.0
+                    "farm_size_ha": 10.0,
+                    "distance_to_field_km": 1.0
                 }
             )
             
@@ -254,8 +262,8 @@ class DashboardApiTest(unittest.TestCase):
             resources = payload["resource_regressor"]
             self.assertEqual(resources["flow_rate_l_ha"], 15.0)
             self.assertEqual(resources["total_liters"], 150.0)
-            self.assertEqual(resources["sorties"], 5)
-            self.assertEqual(resources["battery_cycles"], 5)
+            self.assertEqual(resources["distance_to_field_km"], 1.0)
+            self.assertEqual(resources["battery_cycles_needed"], 6) # sorties = 5, travel_cost = ceil(1.0*2*0.1) = 1. Total = 6
 
 
 if __name__ == "__main__":

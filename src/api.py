@@ -866,6 +866,7 @@ def run_3_layer_decision_engine(
     thresholds: DecisionThresholds,
     unsafe_weather_codes: set[int] | frozenset[int],
     farm_size_ha: float = 10.0,
+    distance_to_field_km: float = 1.0,
 ) -> list[dict[str, Any]]:
     global MODEL_PAYLOAD
     if MODEL_PAYLOAD is None:
@@ -876,97 +877,93 @@ def run_3_layer_decision_engine(
         feature_cols = MODEL_PAYLOAD["feature_columns"]
         champion = MODEL_PAYLOAD["champion"]
         challenger = MODEL_PAYLOAD["challenger"]
-        inv_label_mapping = MODEL_PAYLOAD["inv_label_mapping"]
         
         X = df[feature_cols].copy()
-        champ_preds = champion.predict(X)
+        # predict_proba returns probability for all classes. TAKE_OFF is index 0.
         champ_probs = champion.predict_proba(X)
-        chall_preds = challenger.predict(X)
         chall_probs = challenger.predict_proba(X)
     else:
-        champ_preds = []
         champ_probs = []
-        chall_preds = []
         chall_probs = []
-        inv_label_mapping = {}
         
     slots = []
     n = len(df)
     for i in range(n):
         row = df.iloc[i]
         
-        # Lớp 1 - Safety Net
-        l1_action = derive_decision_action(row, thresholds, unsafe_weather_codes)
-        
         if has_model:
-            c_champ = inv_label_mapping[champ_preds[i]]
-            c_chall = inv_label_mapping[chall_preds[i]]
-            p_champ = float(champ_probs[i][champ_preds[i]])
-            p_chall = float(chall_probs[i][chall_preds[i]])
+            # TAKE_OFF is index 0
+            p_champ = float(champ_probs[i][0])
+            p_chall = float(chall_probs[i][0])
         else:
-            c_champ = l1_action
-            c_chall = l1_action
+            # Fallback if no model loaded
             p_champ = 1.0
             p_chall = 1.0
             
-        # Lớp 3 - Consensus Builder
-        was_conflict = (c_champ != c_chall)
+        # Consensus Builder (Layer 2)
+        delta = abs(p_champ - p_chall)
+        was_conflict = (delta > 0.20)
+        
         if not was_conflict:
-            l3_action = c_champ
+            flyability_score = (p_champ + p_chall) / 2.0
         else:
-            if p_champ >= 0.85 and (p_champ - p_chall) >= 0.20:
-                l3_action = c_champ
-            else:
-                risk_champ = RISK_WEIGHTS.get(c_champ, 0)
-                risk_chall = RISK_WEIGHTS.get(c_chall, 0)
-                if risk_champ >= risk_chall:
-                    l3_action = c_champ
-                else:
-                    l3_action = c_chall
-                    
-        if l1_action != "TAKE_OFF":
-            final_decision = l1_action
-        else:
-            final_decision = l3_action
+            # Max Prudence principle: take the lower probability
+            flyability_score = min(p_champ, p_chall)
+            
+        is_safe_to_fly = (flyability_score > 0.80)
             
         slots.append({
             "row": row,
-            "champion_pred": c_champ,
-            "champion_conf": p_champ,
-            "challenger_pred": c_chall,
-            "challenger_conf": p_chall,
+            "champion_score": p_champ,
+            "challenger_score": p_chall,
             "was_conflict": was_conflict,
-            "final_decision": final_decision,
+            "flyability_score": flyability_score,
+            "is_safe_to_fly": is_safe_to_fly,
+            # Backward compatibility fields for DB logging:
+            "champion_pred": "TAKE_OFF" if p_champ > 0.80 else "LOCK_SPRAY",
+            "champion_conf": p_champ,
+            "challenger_pred": "TAKE_OFF" if p_chall > 0.80 else "LOCK_SPRAY",
+            "challenger_conf": p_chall,
+            "final_decision": "TAKE_OFF" if is_safe_to_fly else "LOCK_SPRAY",
         })
         
+    # Apply bootstrap rule
     for i in range(n):
-        if slots[i]["final_decision"] == "TAKE_OFF":
-            left_ok = (i > 0 and slots[i-1]["final_decision"] == "TAKE_OFF")
-            right_ok = (i < n - 1 and slots[i+1]["final_decision"] == "TAKE_OFF")
+        if slots[i]["is_safe_to_fly"]:
+            left_ok = (i > 0 and slots[i-1]["is_safe_to_fly"])
+            right_ok = (i < n - 1 and slots[i+1]["is_safe_to_fly"])
             if not (left_ok or right_ok):
+                slots[i]["flyability_score"] = 0.5
+                slots[i]["is_safe_to_fly"] = False
                 slots[i]["final_decision"] = "DELAY_FLIGHT"
                 
+    TRAVEL_COST_FACTOR = 0.1
     for s in slots:
         row = s["row"]
-        final_decision = s["final_decision"]
+        is_safe = s["is_safe_to_fly"]
         
-        risk_level = get_risk_level_from_action(final_decision)
-        s["risk_level"] = risk_level
-        s["xai_alert"] = generate_xai_explanation(row, thresholds)
-        
-        temp = float(row.get("temperature_2m", 0))
-        humidity = float(row.get("relative_humidity_2m", 100))
-        
-        if temp >= 36.0 and humidity < 40.0:
-            flow_rate_l_ha = 15.0
-        else:
-            flow_pct = calculate_dynamic_flow_rate(row, thresholds)
-            flow_rate_l_ha = round(flow_pct / 10.0, 2)
+        if is_safe:
+            temp = float(row.get("temperature_2m", 0))
+            humidity = float(row.get("relative_humidity_2m", 100))
             
-        total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
-        import math
-        sorties = math.ceil(total_liters / 30.0)
-        battery_cycles = sorties
+            if temp >= 36.0 and humidity < 40.0:
+                flow_rate_l_ha = 15.0
+            else:
+                flow_pct = calculate_dynamic_flow_rate(row, thresholds)
+                flow_rate_l_ha = round(flow_pct / 10.0, 2)
+                
+            total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
+            import math
+            sorties = math.ceil(total_liters / 30.0)
+            battery_cycles = sorties + math.ceil(distance_to_field_km * 2 * TRAVEL_COST_FACTOR)
+        else:
+            flow_rate_l_ha = 0.0
+            total_liters = 0.0
+            sorties = 0
+            battery_cycles = 0
+            
+        s["risk_level"] = "LOW" if is_safe else "HIGH"
+        s["xai_alert"] = generate_xai_explanation(row, thresholds)
         
         s["resource_regressor"] = {
             "flow_rate_l_ha": flow_rate_l_ha,
@@ -981,7 +978,8 @@ def _reconcile_and_save_decisions_log(
     slots: list[dict[str, Any]], 
     location: str, 
     farm_size_ha: float, 
-    thresholds: DecisionThresholds
+    thresholds: DecisionThresholds,
+    distance_to_field_km: float = 1.0,
 ) -> list[dict[str, Any]]:
     try:
         client = db.get_client()
@@ -1011,14 +1009,26 @@ def _reconcile_and_save_decisions_log(
             except Exception as e:
                 print(f"Error parsing db timestamp: {e}")
 
+    existing_map_by_ts = {}
+    for r in existing_rows:
+        snapshot = r.get("weather_snapshot", {})
+        loc_name = snapshot.get("location_name")
+        if loc_name == location:
+            try:
+                db_ts = pd.to_datetime(r["timestamp"]).replace(tzinfo=None).isoformat()
+                existing_map_by_ts[db_ts] = r
+            except Exception as e:
+                print(f"Error parsing db timestamp: {e}")
+
     to_insert_indices = []
     to_insert_rows = []
+    TRAVEL_COST_FACTOR = 0.1
 
     for idx, s in enumerate(slots):
         row = s["row"]
         ts_iso = pd.to_datetime(row["timestamp_dt"]).replace(tzinfo=None).isoformat()
 
-        db_row = existing_map.get(ts_iso)
+        db_row = existing_map_by_ts.get(ts_iso)
         if db_row:
             s["id"] = db_row["id"]
             s["was_human_overridden"] = db_row.get("was_human_overridden", False)
@@ -1027,6 +1037,9 @@ def _reconcile_and_save_decisions_log(
                 s["user_notes"] = db_row.get("weather_snapshot", {}).get("user_override_notes", "")
                 
                 override_decision = s["final_decision"]
+                s["is_safe_to_fly"] = (override_decision == "TAKE_OFF")
+                s["flyability_score"] = 1.0 if s["is_safe_to_fly"] else 0.0
+                
                 if override_decision == "TAKE_OFF":
                     temp = float(row.get("temperature_2m", 25.0))
                     humidity = float(row.get("relative_humidity_2m", 70.0))
@@ -1040,7 +1053,7 @@ def _reconcile_and_save_decisions_log(
                     total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
                     import math
                     sorties = math.ceil(total_liters / 30.0)
-                    battery_cycles = sorties
+                    battery_cycles = sorties + math.ceil(distance_to_field_km * 2 * TRAVEL_COST_FACTOR)
                     
                     s["resource_regressor"] = {
                         "flow_rate_l_ha": flow_rate_l_ha,
@@ -1083,7 +1096,13 @@ def _reconcile_and_save_decisions_log(
                 "challenger_conf": float(s["challenger_conf"]),
                 "final_decision": s["final_decision"],
                 "was_conflict": bool(s["was_conflict"]),
-                "was_human_overridden": False
+                "was_human_overridden": False,
+                # New probabilistic columns:
+                "champion_score": float(s["champion_score"]),
+                "challenger_score": float(s["challenger_score"]),
+                "flyability_score": float(s["flyability_score"]),
+                "distance_to_field_km": float(distance_to_field_km),
+                "is_safe_to_fly": bool(s["is_safe_to_fly"]),
             })
             to_insert_indices.append(idx)
 
@@ -1106,6 +1125,7 @@ def get_dashboard_slots(
     location: str = "Dong Thap",
     at: str | None = None,
     farm_size_ha: float = 10.0,
+    distance_km: float = 1.0,
 ) -> dict[str, Any]:
     source_path = latest_clean_dataset()
     config = read_decision_config()
@@ -1127,10 +1147,10 @@ def get_dashboard_slots(
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
     daily_df = daily_df.sort_values("timestamp_dt")
     
-    slots = run_3_layer_decision_engine(daily_df, thresholds, unsafe_weather_codes, farm_size_ha)
+    slots = run_3_layer_decision_engine(daily_df, thresholds, unsafe_weather_codes, farm_size_ha, distance_km)
     
     try:
-        slots = _reconcile_and_save_decisions_log(slots, location, farm_size_ha, thresholds)
+        slots = _reconcile_and_save_decisions_log(slots, location, farm_size_ha, thresholds, distance_km)
     except Exception as e:
         print(f"Reconciliation and auto-save failed: {e}")
         
@@ -1157,15 +1177,18 @@ def get_dashboard_slots(
                 "soil_moisture": as_number(row.get("soil_moisture_0_to_7cm", 0.0), 2),
             },
             "decision_engine": {
-                "champion_prediction": s["champion_pred"],
-                "champion_confidence": as_number(s["champion_conf"], 2),
-                "challenger_prediction": s["challenger_pred"],
-                "challenger_confidence": as_number(s["challenger_conf"], 2),
+                "champion_score": as_number(s["champion_score"], 2),
+                "challenger_score": as_number(s["challenger_score"], 2),
                 "was_conflict": s["was_conflict"],
-                "final_decision": s["final_decision"],
-                "risk_level": s["risk_level"],
+                "flyability_score": as_number(s["flyability_score"], 3),
+                "is_safe_to_fly": s["is_safe_to_fly"],
                 "xai_alert": s["xai_alert"],
-                "resource_regressor": s["resource_regressor"],
+                "resource_regressor": {
+                    "flow_rate_l_ha": s["resource_regressor"]["flow_rate_l_ha"],
+                    "total_liters": s["resource_regressor"]["total_liters"],
+                    "distance_to_field_km": distance_km,
+                    "battery_cycles_needed": s["resource_regressor"]["battery_cycles"],
+                }
             }
         })
         
@@ -1230,11 +1253,11 @@ def chat_ask(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
             
         snap = latest.get("weather_snapshot", {})
         loc_name = snap.get("location_name", "không rõ địa điểm")
-        final_dec = latest.get("final_decision", "UNKNOWN")
-        champ_pred = latest.get("champion_pred", "UNKNOWN")
-        champ_conf = latest.get("champion_conf", 0.0) * 100
-        chall_pred = latest.get("challenger_pred", "UNKNOWN")
-        chall_conf = latest.get("challenger_conf", 0.0) * 100
+        
+        is_safe = latest.get("is_safe_to_fly", latest.get("final_decision") == "TAKE_OFF")
+        fly_score = latest.get("flyability_score", 1.0 if is_safe else 0.5) * 100.0
+        champ_score = latest.get("champion_score", latest.get("champion_conf", 0.0)) * 100.0
+        chall_score = latest.get("challenger_score", latest.get("challenger_conf", 0.0)) * 100.0
         was_conflict = latest.get("was_conflict", False)
         
         temp = snap.get("temperature_2m", 0.0)
@@ -1245,23 +1268,31 @@ def chat_ask(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         rain_prob = snap.get("precipitation_probability", 0.0)
         
         answer = f"Tại **{loc_name}** vào lúc **{time_formatted}**:\n"
-        answer += f"- **Quyết định bay cuối cùng**: `{final_dec}`\n"
+        answer += f"- **Khả năng cất cánh**: `{fly_score:.1f}%` ({'Đủ điều kiện an toàn bay' if is_safe else 'Không đủ điều kiện an toàn bay'})\n"
         
         if was_conflict:
-            answer += f"- **Xử lý xung đột**: Mô hình Champion đề xuất `{champ_pred}` ({champ_conf:.1f}%), trong khi Challenger đề xuất `{chall_pred}` ({chall_conf:.1f}%). Hệ thống đã áp dụng quy tắc giải quyết xung đột.\n"
+            answer += f"- **Trạng thái xung đột**: Có sự lệch pha giữa các mô hình. Random Forest dự báo khả năng bay là {champ_score:.1f}%, trong khi XGBoost dự báo {chall_score:.1f}%.\n"
         else:
-            answer += f"- **Dự báo của AI**: Cả hai mô hình đều đồng thuận đề xuất `{champ_pred}` với độ tin cậy của Champion là {champ_conf:.1f}%.\n"
+            answer += f"- **Dự báo của AI**: Cả hai mô hình đồng thuận cao. Random Forest dự báo khả năng bay là {champ_score:.1f}%, XGBoost dự báo {chall_score:.1f}%.\n"
             
         answer += f"- **Thông số thời tiết**: Nhiệt độ {temp:.1f}°C, Độ ẩm {humidity:.0f}%, Tốc độ gió {wind:.1f} km/h (gió giật {gust:.1f} km/h), Lượng mưa {rain:.1f} mm/h (Xác suất mưa {rain_prob:.0f}%).\n"
         
-        if final_dec == "TAKE_OFF":
-            answer += "- **Chi tiết**: Điều kiện thời tiết rất thuận lợi và an toàn cho drone hoạt động. Không vi phạm bất kỳ ngưỡng vật lý nào."
-        elif final_dec == "LOCK_SPRAY":
-            answer += f"- **Chi tiết**: Lệnh phun thuốc bị KHÓA (`LOCK_SPRAY`) chủ yếu do tốc độ gió ({wind:.1f} km/h) hoặc gió giật ({gust:.1f} km/h) vượt quá ngưỡng an toàn để đảm bảo drone bay ổn định và tránh trôi thuốc."
-        elif final_dec == "RETURN_TO_CHARGING":
-            answer += f"- **Chi tiết**: Drone được yêu cầu QUAY VỀ TRẠM SẠC (`RETURN_TO_CHARGING`) ngay lập tức do có mưa thực tế ({rain:.1f} mm/h) hoặc xác suất mưa quá cao ({rain_prob:.0f}%), nhằm tránh rủi ro hỏng hóc pin/mạch điện do nước mưa."
+        if is_safe:
+            answer += "- **Chi tiết**: Các chỉ số khí tượng cho thấy mức độ an toàn cao. Drone có thể cất cánh hoạt động."
         else:
-            answer += f"- **Chi tiết**: Chuyến bay bị TẠM HOÃN (`DELAY_FLIGHT`) do nhiệt độ cao ({temp:.1f}°C > 35°C) hoặc xác suất mưa ở mức trung bình."
+            answer += f"- **Chi tiết**: Quyết định hạn chế bay được đưa ra do khả năng cất cánh chỉ đạt {fly_score:.1f}% (dưới ngưỡng an toàn 80%). Phân tích từ mô hình ghi nhận các yếu tố ảnh hưởng bất lợi: "
+            reasons = []
+            if wind > 28.8:
+                reasons.append(f"tốc độ gió cao {wind:.1f} km/h")
+            if gust > 28.8:
+                reasons.append(f"gió giật mạnh {gust:.1f} km/h")
+            if rain > 2.0:
+                reasons.append(f"có mưa {rain:.1f} mm/h")
+            if temp > 35.0:
+                reasons.append(f"nhiệt độ nóng {temp:.1f}°C")
+            if not reasons:
+                reasons.append("điều kiện vi khí hậu không thuận lợi")
+            answer += ", ".join(reasons) + "."
             
         if len(matched_rows) > 1:
             answer += f"\n\n*(Lưu ý: Tôi cũng tìm thấy {len(matched_rows) - 1} quyết định bay khác trong lịch sử của {loc_name if location else 'các địa điểm'}.)*"
@@ -1326,6 +1357,7 @@ def override_decision(
     override_decision = payload.get("override_decision")
     user_notes = payload.get("user_notes", "")
     farm_size_ha = float(payload.get("farm_size_ha", 10.0))
+    distance_to_field_km = float(payload.get("distance_to_field_km", payload.get("distance_km", 1.0)))
     was_human_overridden = payload.get("was_human_overridden", True)
     
     if not override_decision:
@@ -1363,10 +1395,14 @@ def override_decision(
     else:
         weather_snapshot.pop("user_override_notes", None)
         
+    is_safe = (override_decision == "TAKE_OFF")
     update_data = {
         "final_decision": override_decision,
         "was_human_overridden": was_human_overridden,
         "weather_snapshot": weather_snapshot,
+        "is_safe_to_fly": is_safe,
+        "flyability_score": 1.0 if is_safe else 0.0,
+        "distance_to_field_km": distance_to_field_km,
     }
     
     try:
@@ -1385,6 +1421,7 @@ def override_decision(
         )
         
     updated_record = updated_records[0]
+    TRAVEL_COST_FACTOR = 0.1
     
     if override_decision == "TAKE_OFF":
         temp = float(weather_snapshot.get("temperature_2m", 25.0))
@@ -1402,20 +1439,20 @@ def override_decision(
         total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
         import math
         sorties = math.ceil(total_liters / 30.0)
-        battery_cycles = sorties
+        battery_cycles = sorties + math.ceil(distance_to_field_km * 2 * TRAVEL_COST_FACTOR)
         
         resource_regressor = {
             "flow_rate_l_ha": flow_rate_l_ha,
             "total_liters": total_liters,
-            "sorties": sorties,
-            "battery_cycles": battery_cycles,
+            "distance_to_field_km": distance_to_field_km,
+            "battery_cycles_needed": battery_cycles,
         }
     else:
         resource_regressor = {
             "flow_rate_l_ha": 0.0,
             "total_liters": 0.0,
-            "sorties": 0,
-            "battery_cycles": 0,
+            "distance_to_field_km": distance_to_field_km,
+            "battery_cycles_needed": 0,
         }
         
     return {
@@ -1423,6 +1460,8 @@ def override_decision(
         "id": id,
         "final_decision": updated_record["final_decision"],
         "was_human_overridden": updated_record["was_human_overridden"],
+        "is_safe_to_fly": updated_record.get("is_safe_to_fly", is_safe),
+        "flyability_score": updated_record.get("flyability_score", 1.0 if is_safe else 0.0),
         "resource_regressor": resource_regressor,
     }
 
