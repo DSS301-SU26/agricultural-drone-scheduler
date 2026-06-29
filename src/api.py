@@ -907,8 +907,13 @@ def run_3_layer_decision_engine(
         if not was_conflict:
             flyability_score = (p_champ + p_chall) / 2.0
         else:
-            # Max Prudence principle: take the lower probability
-            flyability_score = min(p_champ, p_chall)
+            # If one model is highly confident (>= 90%) and the other is reasonable (>= 60%),
+            # we take the average to avoid excessively penalizing morning slots.
+            if max(p_champ, p_chall) >= 0.90 and min(p_champ, p_chall) >= 0.60:
+                flyability_score = (p_champ + p_chall) / 2.0
+            else:
+                # Max Prudence principle: take the lower probability
+                flyability_score = min(p_champ, p_chall)
             
         # --- Soft Penalty Layer (Safety Constraints) ---
         wind = float(row.get("wind_speed_10m", 0))
