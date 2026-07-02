@@ -13,9 +13,13 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 @lru_cache(maxsize=1)
-def get_predictor() -> Predictor:
+def get_predictor() -> Predictor | None:
     """Load model 1 lan cho toan bo vong doi app."""
-    return Predictor()
+    try:
+        return Predictor()
+    except Exception as e:
+        print(f"Warning: Predictor failed to load ({e}). Using fallback rules.")
+        return None
 
 
 @lru_cache(maxsize=1)

@@ -109,7 +109,23 @@ def _fetch_day(lat: float, lon: float) -> tuple[pd.DataFrame, str]:
     except Exception:
         pass
     from ..ml.simulator import simulate
-    return simulate(n=48).sort_values("timestamp").reset_index(drop=True), "Du lieu mo phong"
+    import datetime
+    today = datetime.date.today()
+    base_df = simulate(n=1)
+    
+    rows = []
+    for h in range(6, 18):
+        row = base_df.iloc[0].copy()
+        row["timestamp"] = pd.Timestamp(f"{today.isoformat()} {h:02d}:00:00")
+        # Jitter the temperature to simulate diurnal cycle
+        if h < 13:
+            row["temperature_2m"] = max(20, row["temperature_2m"] + (h - 5) * 0.8)
+        else:
+            row["temperature_2m"] = max(20, row["temperature_2m"] - (h - 13) * 0.8)
+        rows.append(row)
+        
+    df = pd.DataFrame(rows)
+    return df, "Du lieu mo phong (Hom nay)"
 
 
 @router.get("/api/dashboard/slots")
@@ -125,6 +141,7 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
     df["ts"] = pd.to_datetime(df["timestamp"])
     day = df["ts"].dt.date.iloc[0]
     day_df = df[df["ts"].dt.date == day].sort_values("ts").reset_index(drop=True)
+    day_df = day_df[(day_df["ts"].dt.hour >= 6) & (day_df["ts"].dt.hour <= 17)].reset_index(drop=True)
 
     predictor = get_predictor()
     drone = get_drone(drone_model)
@@ -146,10 +163,10 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
                    soil_water_level_cm=water).to_dict()
 
         is_fly = r["decision"] == "FLY"
-        water_l_ha = (r.get("spray_config") or {}).get("water_volume_l_ha", 0.0) if is_fly else 0.0
+        water_l_ha = (r.get("spray_config") or {}).get("water_volume_l_ha", 0.0)
         total_liters = round(water_l_ha * farm_size_ha, 1)
         sorties = math.ceil(total_liters / tank) if total_liters else 0
-        battery = sorties + (math.ceil(distance_km * 2 * 0.1) if is_fly else 0)
+        battery = sorties + math.ceil(distance_km * 2 * 0.1)
 
         wc = int(weather.get("weather_code") or 0)
         slots.append({

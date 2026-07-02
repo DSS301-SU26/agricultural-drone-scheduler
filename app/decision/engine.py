@@ -108,9 +108,13 @@ def decide(
 
     # --- Lop ML: 3 diem ---
     df = pd.DataFrame([weather])
-    safety_arr, rf_arr, xgb_arr = predictor.flight_safety(df)
-    safety = float(safety_arr[0]); rf = float(rf_arr[0]); xgb = float(xgb_arr[0])
-    was_conflict = abs(rf - xgb) > 20.0
+    if predictor is None:
+        safety = 100.0; rf = 100.0; xgb = 100.0
+        was_conflict = False
+    else:
+        safety_arr, rf_arr, xgb_arr = predictor.flight_safety(df)
+        safety = float(safety_arr[0]); rf = float(rf_arr[0]); xgb = float(xgb_arr[0])
+        was_conflict = abs(rf - xgb) > 20.0
     crop = crop_impact_score(weather, crop_stage)
     spray = spray_quality_score(weather, pesticide)
 
@@ -123,14 +127,13 @@ def decide(
     if hard_locked:
         final = Decision.NO_FLY
 
-    # --- Cau hinh bay & phun (chi khi khong bi khoa) ---
+    # --- Cau hinh bay & phun (Tinh toan luon de uoc tinh tai nguyen) ---
     flight_config = spray_config = None
-    if final is not Decision.NO_FLY and crop_stage is not None:
+    if crop_stage is not None:
         fc = recommend_flight_config(crop_stage)
         flight_config = asdict(fc)
-    if final is not Decision.NO_FLY:
-        spray_config = recommend_nozzle_and_water(
-            pesticide, float(weather.get("wind_speed_10m", 0)))
+    spray_config = recommend_nozzle_and_water(
+        pesticide, float(weather.get("wind_speed_10m", 0)))
 
     # --- AWD (doc lap voi quyet dinh bay) ---
     awd_dict = None

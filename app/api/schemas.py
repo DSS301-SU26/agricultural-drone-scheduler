@@ -17,6 +17,17 @@ class DecisionRequest(BaseModel):
     plot_id: int | None = None            # de mo phong soil / ghi log
 
 
+class DroneCreate(BaseModel):
+    model_name: str
+    max_wind_resistance_kph: float
+    max_gust_resistance_kph: float
+    tank_capacity_liters: float
+    spray_system_type: str = "CENTRIFUGAL"
+    ip_rating: str = "IP67"
+    image_url: str | None = None
+    notes: str | None = None
+
+
 class OverrideRequest(BaseModel):
     reason: str = Field(..., min_length=3)
     weather: dict[str, Any]

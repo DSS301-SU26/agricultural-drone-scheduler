@@ -17,7 +17,10 @@ class DroneProfile:
     max_gust_resistance_kph: float
     tank_capacity_liters: int
     nozzle_technology: str      # 'PRESSURE' | 'CENTRIFUGAL'
-    ingress_protection: str
+    ingress_protection: str         # IP67, IPX6K (chong nuoc/bui)
+    drone_id: int | None = None
+    image_url: str | None = None
+    notes: str | None = None
 
 
 @dataclass(frozen=True)

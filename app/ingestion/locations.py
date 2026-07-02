@@ -8,4 +8,6 @@ DELTA_LOCATIONS: list[dict] = [
     {"name": "Long An",    "lat": 10.5360, "lon": 106.4052},
     {"name": "Tien Giang", "lat": 10.3598, "lon": 106.3567},
     {"name": "Kien Giang", "lat": 10.0125, "lon": 105.0808},
+    {"name": "Ho Chi Minh", "lat": 10.8231, "lon": 106.6297},
+    {"name": "Ha Noi",     "lat": 21.0285, "lon": 105.8542},
 ]

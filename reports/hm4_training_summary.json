@@ -1,57 +1,57 @@
 {
-  "rows": 262944,
+  "rows": 154644,
   "class_distribution": {
-    "FLY": 137872,
-    "DELAY": 82735,
-    "NO_FLY": 42337
+    "FLY": 90265,
+    "DELAY": 51185,
+    "NO_FLY": 13194
   },
   "champion": "random_forest",
   "challenger": "xgboost",
   "metrics": {
     "random_forest": {
-      "accuracy": 0.7957,
-      "macro_f1": 0.7872,
-      "weighted_f1": 0.7997
+      "accuracy": 0.7724,
+      "macro_f1": 0.7284,
+      "weighted_f1": 0.7767
     },
     "xgboost": {
-      "accuracy": 0.8036,
-      "macro_f1": 0.7915,
-      "weighted_f1": 0.8053
+      "accuracy": 0.7877,
+      "macro_f1": 0.7337,
+      "weighted_f1": 0.7861
     }
   },
   "top_features": [
     [
       "wind_gusts_10m",
-      0.23386347421182305
+      0.30093573774774335
     ],
     [
       "wind_speed_10m",
-      0.16111960257327043
+      0.22258060646602407
     ],
     [
       "precipitation",
-      0.14623658052075889
+      0.14025929599982678
     ],
     [
       "weather_code",
-      0.1428065120694133
-    ],
-    [
-      "precipitation_probability",
-      0.11516797296192983
+      0.1312670905326314
     ],
     [
       "gust_wind_gap",
-      0.09712828628719301
+      0.09339858233148127
     ],
     [
-      "et0_fao_evapotranspiration",
-      0.03192329100037472
+      "hour",
+      0.020147933715558
     ],
     [
       "delta_t",
-      0.017284648099602146
+      0.018822071736578495
+    ],
+    [
+      "vpd",
+      0.01697316693391191
     ]
   ],
-  "model_path": "/Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler/models/agriflight_model.joblib"
+  "model_path": "D:\\IdeaProjects\\DSS301\\agricultural-drone-scheduler\\models\\agriflight_model.joblib"
 }
