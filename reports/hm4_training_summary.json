@@ -1,0 +1,57 @@
+{
+  "rows": 262944,
+  "class_distribution": {
+    "FLY": 137872,
+    "DELAY": 82735,
+    "NO_FLY": 42337
+  },
+  "champion": "random_forest",
+  "challenger": "xgboost",
+  "metrics": {
+    "random_forest": {
+      "accuracy": 0.7957,
+      "macro_f1": 0.7872,
+      "weighted_f1": 0.7997
+    },
+    "xgboost": {
+      "accuracy": 0.8036,
+      "macro_f1": 0.7915,
+      "weighted_f1": 0.8053
+    }
+  },
+  "top_features": [
+    [
+      "wind_gusts_10m",
+      0.23386347421182305
+    ],
+    [
+      "wind_speed_10m",
+      0.16111960257327043
+    ],
+    [
+      "precipitation",
+      0.14623658052075889
+    ],
+    [
+      "weather_code",
+      0.1428065120694133
+    ],
+    [
+      "precipitation_probability",
+      0.11516797296192983
+    ],
+    [
+      "gust_wind_gap",
+      0.09712828628719301
+    ],
+    [
+      "et0_fao_evapotranspiration",
+      0.03192329100037472
+    ],
+    [
+      "delta_t",
+      0.017284648099602146
+    ]
+  ],
+  "model_path": "/Users/macprocuaphat/Desktop/DSS301/DSS301_Code/BE/agricultural-drone-scheduler/models/agriflight_model.joblib"
+}
