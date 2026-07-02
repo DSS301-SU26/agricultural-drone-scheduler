@@ -1,8 +1,8 @@
 {
   "scope": "best_slot_inside_training_snapshot_not_live_forecast",
   "dataset_time_range": {
-    "min_timestamp": "2026-05-25 06:00:00",
-    "max_timestamp": "2026-06-04 17:00:00"
+    "min_timestamp": "2020-12-31 06:00:00",
+    "max_timestamp": "2026-06-08 17:00:00"
   },
   "location_name": "Tien Giang",
   "timestamp": "2026-06-01 06:00:00",

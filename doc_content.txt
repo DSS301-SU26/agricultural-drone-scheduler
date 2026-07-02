@@ -1,0 +1,835 @@
+FPT UNIVERSITY – HO CHI MINH CITY
+Khoa Công nghệ Thông tin
+HƯỚNG DẪN SINH VIÊN
+Triển khai Research-Based Learning (RBL)
+— Theo dõi & Thực hiện —
+ITA301
+Information System Analysis & Design
+Phân tích và Thiết kế Hệ thống Thông tin
+Research Theme:
+Drone/UAV Ecosystem — System Analysis & Design
+RBL Level: Junior — Applied Research (RBL Insight)
+Học kỳ Summer 2026 — Pilot Implementation
+Phiên bản 1.0 — Khoa CNTT, FPT University HCM
+Mục lục
+Phần 1: RBL là gì? Vì sao bạn cần quan tâm?
+Phần 2: Research Theme — Drone/UAV/AV
+Phần 3: Tóm tắt môn ITA301 — bạn cần biết gì?
+Phần 4: RBL Insight — DTC + AI Reflection (CỐT LÕI)
+Phần 5: Lộ trình 11 tuần — Bạn cần làm gì mỗi tuần
+Phần 6: 5 Deliverables — Template chi tiết
+Phần 7: AI Audit Log — Template + Ví dụ
+Phần 8: Rubric đánh giá — Bạn được chấm thế nào
+Phần 9: Sample topics — Gợi ý đề tài UAV
+Phần 10: Checklist tổng — Self-check trước khi nộp
+Phụ lục A: Kỹ năng làm việc nhóm RBL
+Phụ lục B: AI Usage Declaration (Bắt buộc)
+Phụ lục C: Mẹo bảo vệ trước hội đồng (Week 11)
+1. RBL là gì? Vì sao bạn cần quan tâm?
+Research-Based Learning (RBL) là phương pháp học tập trong đó bạn không chỉ "làm bài tập" — bạn thực hiện một dự án nghiên cứu ứng dụng nhỏ, đi qua đầy đủ các bước của một nhà nghiên cứu / kỹ sư chuyên nghiệp:
+Phát hiện vấn đề thực tế đáng giải quyết.
+Thiết kế cách tiếp cận có cơ sở khoa học.
+Thực hiện, đánh giá và bảo vệ kết quả của mình.
+Khác với cách học truyền thống "giảng → làm bài → thi", RBL giúp bạn:
+Có sản phẩm cụ thể bổ sung vào hồ sơ năng lực (portfolio).
+Sẵn sàng cho Capstone, Internship và nghiên cứu khoa học sinh viên.
+Phát triển tư duy phản biện và năng lực tự học.
+Hiểu sâu kiến thức môn học vì áp dụng ngay vào bài toán thật.
+ℹ️ GHI CHÚ: RBL không khó hơn — RBL "thật" hơn
+Bạn vẫn học cùng nội dung syllabus, vẫn đánh giá theo cùng các thành phần. Khác biệt là Project / Assignment / Lab của bạn được thực hiện trên một bài toán thực, không phải case ảo trong sách giáo khoa.
+2. Research Theme — Drone / UAV / Autonomous Systems
+Cả 4 môn học của khối Hệ thống Thông tin (DTA301, ITA301, DSS301, KMS301) trong học kỳ này được triển khai theo cùng một theme:
+"Drone / UAV / Autonomous Systems"
+Lý do bạn nên quan tâm tới theme này:
+Đây là lĩnh vực đang phát triển mạnh ở Việt Nam (nông nghiệp, logistics, an ninh, cứu hộ, khảo sát hạ tầng…).
+Có nhiều dataset thực mở (Kaggle, KITTI, NTSB, AirSim, PX4 logs…) — bạn không cần "tự bịa" dữ liệu.
+Liên thông giữa 4 môn: dataset, case study, system design có thể tái sử dụng — bạn càng học nhiều môn, càng tích lũy được tri thức UAV.
+Gắn với AIC Lab, các dự án thực và các hợp tác industry của Khoa.
+💡 TIP: Vai trò của ITA301 trong chuỗi UAV Ecosystem
+DTA301 = Phân tích dữ liệu UAV  (Data → Insight)
+ITA301 = Thiết kế hệ thống thông tin UAV  (Requirement → Design)
+DSS301 = Hỗ trợ ra quyết định vận hành UAV  (Data → Decision)
+KMS301 = Quản trị tri thức tổ chức UAV  (Knowledge → System)
+3. Tóm tắt môn ITA301 — Bạn cần biết gì?
+3.1. Bạn sẽ học gì?
+ITA301 dạy bạn cách phân tích yêu cầu nghiệp vụ từ stakeholder thật, mô hình hóa hệ thống bằng UML/DFD/ERD, và thiết kế giải pháp end-to-end cho một bài toán Drone/UAV — từ kiến trúc, UI, data, security đến vận hành. Đây là môn "cây cầu" giữa lập trình và quản lý dự án CNTT.
+Theo định hướng RBL Insight 2026, môn này được triển khai trong khung tư duy DTC (Domain Thinking Components) + AI Reflection — đảm bảo bạn không chỉ "biết" mà còn biết "phản biện AI" khi sử dụng công cụ AI trong project.
+3.2. Cấu trúc đánh giá môn
+Thành phần
+Trọng số
+Hình thức
+Vai trò RBL
+Project (Group)
+35%
+5 deliverables (D1–D5)
+⭐ Trung tâm RBL Insight — chấm theo Rubric DTC + Reflection
+Lab (Lab 1, 2, 3)
+15%
+3 lab tương ứng phase
+Scaffold checkpoint cho Project
+Progress Test (3 bài)
+15%
+3 bài × 30′ (W5, W8, W10)
+Cá nhân — kiến thức nền
+Final Exam
+35%
+MCQ / case-based
+Cá nhân — toàn bộ CLO1–CLO12
+3.3. Cấu trúc Rubric trong Project (35%)
+Theo khung RBL Insight, Project được chấm theo công thức:
+RBL Insight = DTC Components (70%) + AI Reflection (30%)
+Thành phần Rubric (trong Project 35%)
+Trọng số
+Vai trò
+🧠 AI Reflection (Human Delta)
+30%
+CỐ ĐỊNH theo khung RBL Insight — không thay đổi
+🔍 Decomposition (Phân rã bài toán)
+20%
+DTC Component — phân rã requirements, UC, modules
+🔁 Pattern Recognition (Nhận diện mô hình)
+15%
+DTC Component — chọn design pattern, architectural style
+🎯 Abstraction (Khái quát hóa)
+15%
+DTC Component — UML, ERD, conceptual model
+⚙️ Process / Algorithm (Quy trình thiết kế)
+20%
+DTC Component — workflow, sequence, QA process
+✅ BẮT BUỘC: AI Reflection 30% là CỐ ĐỊNH theo khung Khoa CNTT
+📌 30% AI Reflection KHÔNG thay đổi — đây là tiêu chuẩn xuyên suốt 5 học kỳ của Khoa.
+70% còn lại được phân bổ cho 4 DTC Components, với trọng số do trưởng môn quyết định.
+Nghĩa là: ngay cả khi UML diagrams của bạn hoàn hảo, nếu KHÔNG có AI Audit Log + reflection, bạn mất 30% điểm Project = 10.5% tổng môn.
+✅ BẮT BUỘC: Điều kiện qua môn
+• Tổng điểm ≥ 5.0
+• Final Exam ≥ 4.0 (MinAvgMarkToPass theo syllabus)
+• Tham dự ≥ 80% số slot contact
+3.4. Yêu cầu BẮT BUỘC trong RBL Project
+SRS theo chuẩn IEEE 830 (cấu trúc, không cần độ dài đầy đủ).
+UML đầy đủ: ≥1 Class + ≥3 Sequence + ≥2 Activity Diagram.
+ERD 3NF + data dictionary.
+Architecture có ≥2 alternatives + trade-off matrix (chỉ ở mức thiết kế, không cần triển khai).
+Security threat model (mức tổng quan, dùng STRIDE hoặc tương đương).
+🧠 AI Audit Log v1.0 ≥25 entries cuối kỳ (Phần 7).
+🧠 Mỗi thành viên đều có thể giải thích quyết định trong Audit Log khi Oral Vivas.
+AI Usage Declaration trong báo cáo cuối (Phụ lục B).
+✅ BẮT BUỘC: Scope Control — ITA301 là môn THIẾT KẾ, không phải IMPLEMENT
+📌 Đây là môn Phân tích & Thiết kế Hệ thống — KHÔNG yêu cầu coding hệ thống thực tế.
+✅ Bạn CẦN làm:
+  • Phân tích yêu cầu (SRS), mô hình hóa (UML/DFD/ERD), thiết kế kiến trúc & UI.
+  • Prototype ở mức wireframe / mock UI (Figma, Balsamiq, draw.io, hoặc HTML mockup tĩnh).
+  • Demo flow click-through trên Figma / mockup.
+  • AI Audit Log đầy đủ + reflection cho mọi quyết định lớn.
+❌ Bạn KHÔNG cần làm:
+  • Implement backend / database thực.
+  • Code frontend functional.
+  • Deploy hệ thống lên cloud.
+  • Tích hợp với UAV thật.
+👉 Việc code & deploy là phạm vi của các môn lập trình & DevOps khác (PRJ301, PRN211, SWP391…). ITA301 dừng ở "đây là cách hệ thống NÊN được xây dựng" — không phải "đây là hệ thống đã chạy".
+4. RBL Insight — DTC + AI Reflection (CỐT LÕI)
+4.1. Khung RBL Insight là gì?
+RBL Insight là khung phương pháp dạy-học chính thức của Khoa CNTT — FPT University HCM, áp dụng cho cả 5 học kỳ cơ sở ngành. Khung này gồm 2 lớp được tích hợp trong môn ITA301:
+Lớp 1 — DTC (Domain Thinking Components): 4 thành phần tư duy nền tảng cho ngành IT — Decomposition, Pattern Recognition, Abstraction, Process/Algorithms.
+Lớp 2 — AI Reflection: đánh giá cách bạn tương tác với AI có phản biện, phát hiện hallucination, đảm bảo "Human Delta" — giá trị con người AI không thể tự tạo.
+ℹ️ GHI CHÚ: AI Reflection không phải "dùng AI nhiều hay ít"
+📌 AI Reflection KHÔNG đánh giá việc "dùng AI nhiều hay ít".
+AI Reflection đánh giá khả năng:
+  • Kiểm chứng kết quả AI (verify against reality)
+  • Phản biện gợi ý AI (critical thinking)
+  • Tối ưu prompt và workflow
+  • Chịu trách nhiệm về quyết định cuối cùng
+Bạn có thể dùng AI rất nhiều và vẫn được điểm Excellent — miễn là có reflection rõ ràng. Bạn có thể không dùng AI cũng được Pass — miễn là khai báo trung thực.
+4.2. 4 DTC Components trong ITA301
+DTC Component
+Nội hàm trong ITA301
+Ví dụ AI tương tác cho ITA301
+🔍 Decomposition
+(Phân rã)
+Phân rã business problem UAV thành: stakeholders, sub-processes, use cases, modules, services
+AI gợi ý 15 use cases cho fleet management — nhóm gộp 2 UC trùng + bỏ 3 UC ngoài scope + bổ sung 1 UC AI bỏ sót về regulatory compliance
+🔁 Pattern Recognition
+(Nhận diện mô hình)
+Chọn design pattern (MVC, Repository, Observer), architectural style (layered, microservices), UI pattern (dashboard, wizard)
+AI đề xuất Microservices, nhóm chọn Layered cho project scope nhỏ + giải thích trade-off latency/complexity
+🎯 Abstraction
+(Khái quát hóa)
+Vẽ UML/DFD/ERD: lược bỏ chi tiết không cần ở mức conceptual, giữ chi tiết cần ở mức logical/physical
+AI vẽ Class Diagram với 25 thuộc tính cho Drone entity — nhóm khái quát còn 12 thuộc tính cốt lõi, đưa 13 còn lại sang sub-classes
+⚙️ Process / Algorithm
+(Quy trình thiết kế)
+Thiết kế requirement elicitation workflow, sequence diagram, QA test process, deployment process
+AI sinh sequence diagram thiếu alternative flow cho UAV connection lost — nhóm trace lại + bổ sung 2 alt flows
+4.3. Human Delta — Giá trị con người AI không thể tạo
+AI Reflection 30% đo lường 4 thành phần Human Delta thông qua AI Audit Log + Oral Vivas:
+Thành phần Human Delta
+Mô tả
+Cách thể hiện trong ITA301
+Critical Thinking
+Phản biện AI output, phát hiện hallucination, logic sai, thiếu sót
+AI bịa "IEEE 830 yêu cầu Section 9.5" — nhóm verify thực không có
+Contextualization
+Hiểu bối cảnh UAV: regulation VN, văn hóa team, ràng buộc thực tế
+AI đề xuất kiến trúc cloud-only, nhóm chỉ ra UAV không thể luôn online → cần edge computing
+Creative Synthesis
+Kết hợp nhiều nguồn: AI + paper + interview + domain experience
+Mix gợi ý AI + design pattern từ paper + interview với pilot drone
+Decision Ownership
+Chịu trách nhiệm về quyết định cuối, giải thích lý do chọn/loại bỏ
+Trong Oral Vivas, mỗi thành viên giải thích được 1 quyết định lớn của nhóm
+4.4. Lộ trình năng lực AI (HK2 — Level 3–4)
+ITA301 là môn HK2 trong chuỗi 5 học kỳ, ứng với mức năng lực AI:
+🎯 AI Application — Level 3–4: Communication & Evaluation
+Khóa học AI khuyến nghị tự học song song: AI Fluency Framework & Fundamental (Anthropic) + IBM GenAI Fund (Coursera) — ~11 giờ tổng.
+Mục tiêu cuối kỳ: bạn viết được prompt có cấu trúc (context → yêu cầu → ràng buộc → format output) và đánh giá được output AI (phát hiện logic sai, thiếu trường hợp).
+https://www.coursera.org/specializations/ai-essentials-google 
+5. Lộ trình 11 tuần — Bạn cần làm gì mỗi tuần
+Bảng dưới đây là "to-do list" cho cả nhóm theo từng tuần. Mỗi tuần đều có ít nhất 1 mục 🧠 AI Reflection — không bỏ qua mục này nếu bạn muốn điểm cao.
+Tuần
+Bạn cần làm gì (kèm AI Audit Log)
+Phải nộp
+Tự đánh giá
+W1
+• Lập nhóm 4–5 SV, chọn Team Lead
+• Đọc kỹ Hướng dẫn này (đặc biệt phần RBL Insight + AI Audit Log)
+• Cài StarUML / draw.io / Figma + tạo file AI Audit Log
+• Chọn sub-domain UAV (delivery, agri, surveillance…)
+• 🧠 AI Reflection: chọn 1 chủ đề UAV và yêu cầu AI gợi ý 3 hướng — giải thích lý do chọn 1 trong 3
+Group list + Topic + AI Audit Log v0
+☐ Nhóm + Lead
+☐ Setup tools
+☐ Audit Log đã start
+☐ Có decision rationale
+W2
+• Stakeholder mapping (primary / secondary / regulatory)
+• AS-IS analysis cho sub-domain UAV
+• 🧠 Decomposition: phân rã business process thành sub-processes
+• 🧠 AI Reflection: cho AI gợi ý stakeholders, so sánh với phân tích nhóm — note ai bị AI bỏ sót / thừa
+Stakeholder map + Business case draft + Audit Log
+☐ Có ≥5 stakeholders
+☐ Có ≥3 pain points
+☐ ≥3 prompt trong Audit Log
+W3
+• Hoàn thiện Business Case (cost-benefit, ROI sơ bộ)
+• Lập WBS, timeline, risk register
+• 🧠 Pattern Recognition: so sánh business case của 2 sub-domain UAV tương tự
+• 🧠 AI Reflection: AI giúp dự đoán risks, nhóm bổ sung domain-specific risks AI bỏ sót
+✅ D1 — Proposal (15% Project) + Audit Log
+☐ Business case có số liệu
+☐ WBS + risk register
+☐ Audit Log ≥5 entries
+☐ D1 đã nộp đúng deadline
+W4
+• Role-play interview stakeholders
+• Requirement elicitation, phân loại FR/NFR
+• Viết ≥8 use cases + user stories (INVEST + acceptance)
+• 🧠 Process/Algorithm: thiết kế requirement elicitation workflow
+• 🧠 AI Reflection: AI generate FR draft, nhóm refine + thêm NFR ngầm AI không biết
+✅ D2 — SRS Document (25% Project) + Audit Log
+☐ ≥15 FRs có priority
+☐ ≥5 NFR categories
+☐ ≥8 use cases chi tiết
+☐ Audit Log có refine rationale
+W5
+📝 Progress Test 1 (30′) — LO1–LO4
+• Vẽ DFD Level 0 + Level 1 cho pipeline UAV
+• Bước đầu Class Diagram + Sequence Diagram
+• 🧠 Abstraction: lược bỏ chi tiết không cần khi vẽ DFD
+• 🧠 AI Reflection: AI vẽ diagram giúp, nhóm chỉnh lại multiplicity / relationships
+PT1 + DFD + UML diagrams draft
+☐ Đã làm PT1
+☐ DFD balanced
+☐ Class Diagram có ≥5 class
+☐ Có rationale chỉnh AI
+W6
+• Hoàn thiện Class, Sequence, Activity diagrams
+• ERD logical + physical (3NF)
+• Data dictionary + Traceability matrix SRS ↔ Models
+• Peer review chéo nhóm
+• 🧠 AI Reflection: AI gợi ý 20 attributes, nhóm chỉ chọn ~10 + 1–2 attribute đặc thù
+✅ D3 — System Models Package (30% Project) + Audit Log
+☐ ≥3 Sequence + ≥2 Activity
+☐ ERD 3NF
+☐ Traceability matrix complete
+☐ Audit Log có abstract rationale
+W7
+• Persona & user journey cho UAV operator/pilot/regulator
+• Wireframe ≥3–5 màn hình chính (Figma / Balsamiq / draw.io)
+• Physical data model + indexing
+• 🧠 Pattern Recognition: chọn UI pattern (dashboard / wizard / master-detail)
+• 🧠 AI Reflection: AI gợi ý wireframes, nhóm so sánh và chọn pattern phù hợp UAV operator
+UI wireframes + Physical data model
+☐ ≥2 personas
+☐ ≥3–5 wireframes
+☐ Physical schema có index
+W8
+📝 Progress Test 2 (30′) — LO5–LO8
+• Architectural pattern selection (layered / microservices / event-driven)
+• Technology stack + deployment topology
+• Trình bày kiến trúc cho cả lớp (peer feedback)
+• 🧠 AI Reflection: AI đề xuất kiến trúc, nhóm so sánh ≥2 alternatives với rationale UAV-specific
+PT2 + Architecture + Tech stack
+☐ Đã làm PT2
+☐ Có ≥2 alternatives
+☐ Tech stack có justification
+☐ Audit Log có pattern compare
+W9
+• Trade-off analysis ≥2 alternative architectures
+• QA plan + test strategy (UC coverage)
+• Security threat model (airspace, PII, telemetry)
+• Ops & maintenance plan
+• 🧠 AI Reflection: AI đề xuất threat model, nhóm verify với context UAV regulation thực tế
+✅ D4 — System Design Document (20% Project) + Audit Log
+☐ Trade-off có matrix
+☐ Test cases map UC
+☐ Threat model rõ ràng
+☐ Audit Log đầy đủ phase này
+W10
+📝 Progress Test 3 (30′) — LO9–LO12
+• Internal Final Presentation & Submission (in-class với GV)
+• Lấy feedback nóng từ GV để fix trước W11
+• Mock defense trong nhóm
+• Hoàn thiện AI Audit Log tổng hợp toàn project
+• Nộp package cuối cùng
+✅ D5 — Final Presentation & Submission + Audit Log v1.0
+☐ Đã làm PT3
+☐ Đã trình bày internal
+☐ Audit Log v1.0 đầy đủ
+☐ D5 nộp full package
+W11
+🎯 Official RBL Review & Defense Session
+• 15′ trình bày + 10′ defense trước Hội đồng (GV + RBL Mentor)
+• Tất cả thành viên chuẩn bị Q&A
+• Demo prototype (wireframe / mock UI / Figma) — KHÔNG cần code thật
+• Oral Vivas: giải thích quyết định trong Audit Log khi được hỏi
+• Điểm Hội đồng được integrated vào D5 (không cột điểm mới)
+Final Defense (tích hợp vào D5)
+☐ Slide hoàn chỉnh
+☐ Mock UI demo OK
+☐ Tất cả biết Q&A
+☐ Sẵn sàng Oral Vivas
+💡 TIP: Chiến lược thời gian
+ITA301 chạy 6 sessions/tuần — cường độ cao, iteration nhanh.
+Mỗi tuần dành ~8–10 giờ cho RBL Project (cả nhóm chia ra).
+AI Audit Log nên cập nhật SAU MỖI buổi làm việc, không để dồn — vì bạn sẽ quên rationale.
+Đừng đợi đến cuối phase mới vẽ diagram — vẽ song song khi học.
+✅ BẮT BUỘC: IMPORTANT — Week 10 vs Week 11
+📌 Buổi "RBL Review & Defense Session" ở Week 11 là phần đánh giá CUỐI CHÍNH THỨC cho deliverable cuối cùng của môn học.
+• Week 10 = Internal Final Presentation & Submission — mang tính internal review / rehearsal / submission check trong nội bộ lớp với GV. Đây là cơ hội cuối để nhóm fix lỗi trước khi gặp Hội đồng.
+• Week 11 = Official RBL Review & Defense Session — bảo vệ chính thức trước Hội đồng (GV môn học + RBL Mentor). Điểm Hội đồng được tích hợp (integrated grading) vào thành phần Final Presentation / Defense của syllabus, KHÔNG tạo cột điểm mới.
+👉 Hai buổi đều quan trọng — nhưng Week 11 mới là buổi "ăn điểm thật". Hãy dùng Week 10 để rehearsal hết sức, lấy feedback nóng, rồi cải thiện cho Week 11.
+6. 5 Deliverables — Template chi tiết
+Mỗi deliverable có cấu trúc bắt buộc theo IEEE 830 / chuẩn công nghiệp + bổ sung mục 🧠 AI Audit Log riêng. Đây là yêu cầu mới theo khung RBL Insight 2026.
+6.1. D1 — Project Proposal (15% Project, nộp cuối W3)
+Mục
+Nội dung cần có
+1. Title & Domain
+Tên hệ thống + sub-domain UAV (delivery, agri, surveillance, AGV…)
+2. Business Context
+Mô tả ngành UAV, các bên liên quan, vì sao cần hệ thống
+3. Stakeholder Map
+Sơ đồ + bảng: Primary / Secondary / Regulatory + role + interest
+4. AS-IS Analysis
+Quy trình hiện tại, pain points (≥3), cơ hội cải tiến
+5. Business Case
+Cost-benefit (số liệu sơ bộ), ROI, lý do đáng đầu tư
+6. Scope
+In-scope / Out-of-scope rõ ràng (bullet list)
+7. WBS
+Work Breakdown Structure cho 10 tuần
+8. Risk Register
+≥5 risks: mô tả, likelihood, impact, mitigation
+9. Team Roles
+Phân công: PM, BA, System Designer, UI Designer, Tech Lead
+🧠 10. AI Audit Log v0
+≥5 entries cho phase Problem & Business (Decomposition + Pattern). Theo template Phần 7
+Độ dài
+6–8 trang A4 + AI Audit Log file riêng
+6.2. D2 — SRS Document (25% Project, nộp cuối W4)
+Mục (theo IEEE 830)
+Nội dung cần có
+1. Introduction
+Purpose, scope, definitions, abbreviations, references
+2. Overall Description
+Product perspective, functions, user characteristics, constraints, assumptions
+3. Specific Requirements — FR
+≥15 Functional Requirements, mỗi FR có ID, priority (Must/Should/Could), source
+4. Specific Requirements — NFR
+≥5 NFR categories: Performance, Security, Usability, Reliability, Scalability — có ngưỡng định lượng
+5. Use Cases
+≥8 use cases: actor, precondition, main flow, alternative flow, postcondition
+6. User Stories
+Theo INVEST, có acceptance criteria (Given-When-Then)
+7. External Interfaces
+API specs, file formats, hardware interfaces (UAV telemetry, GPS…)
+Phụ lục
+Glossary của domain UAV (BVLOS, NOTAM, telemetry…)
+🧠 AI Audit Log
+≥5 entries mới cho phase Requirements (Decomposition + Process/Algorithm)
+Độ dài
+15–25 trang A4 (chất lượng quan trọng hơn số trang)
+ℹ️ GHI CHÚ: Tải IEEE 830 template
+IEEE Std 830-1998 SRS template có sẵn online. Search "IEEE 830 SRS template doc" để tải về.
+6.3. D3 — System Models Package (30% Project, nộp cuối W6)
+Diagram
+Yêu cầu chi tiết
+DFD Level 0 (Context)
+1 process trung tâm, tất cả external entities, data flows chính
+DFD Level 1
+Phân rã 1 process thành ≥4 sub-processes, balanced với Level 0
+Class Diagram
+≥8 classes, đầy đủ: attributes, methods, multiplicity, relationships, inheritance nếu có
+Sequence Diagram
+≥3 sequence cho 3 use cases quan trọng nhất + alternative flows
+Activity Diagram
+≥2 activity cho 2 business processes phức tạp
+ERD (Logical)
+≥6 entities, đầy đủ: PK/FK, cardinality, attributes
+ERD (Physical)
+Datatypes cụ thể, indexing, partitioning nếu cần
+Data Dictionary
+Bảng cho mọi entity: tên field, datatype, length, nullable, mô tả
+Traceability Matrix
+Bảng: FR/UC ↔ Model elements (class, table, sequence)
+🧠 AI Audit Log
+≥5 entries mới cho phase Modeling (Abstraction trọng tâm)
+Định dạng nộp
+PDF tổng hợp + folder chứa source diagram (.staruml, .drawio, .vpp)
+6.4. D4 — System Design Document (20% Project, nộp cuối W9)
+Section
+Nội dung cần có (mức THIẾT KẾ, không IMPLEMENT)
+1. UI Design
+Personas (≥2), user journey, ≥3–5 wireframes (Figma/Balsamiq/draw.io)
+2. Data Design
+Physical schema, indexing strategy (KHÔNG cần backup/recovery chi tiết)
+3. Architecture
+≥2 alternative architectures + trade-off matrix + final choice với justification
+4. Tech Stack
+Đề xuất frontend, backend, database, infrastructure (chỉ liệt kê + lý do, không cần PoC)
+5. Deployment (mức tổng quan)
+Topology diagram đơn giản (cloud / on-prem / hybrid)
+6. Security (mức tổng quan)
+Threat model STRIDE (3–5 threats chính) + access control + encryption
+7. QA Plan
+Test strategy, test types (unit / integration / UAT), test cases mapping cho 3–5 UCs quan trọng
+8. Operations (mức khái quát)
+Monitoring, logging, alerting (gợi ý tools, không cần config thực)
+🧠 AI Audit Log
+≥5 entries mới cho phase Design (Pattern Recognition + Process/Algorithm)
+Độ dài
+15–25 trang A4
+6.5. D5 — Final Presentation & Defense (10% Project, W10–W11)
+Mục
+Yêu cầu
+Slide deck
+~20 slides, theo cấu trúc Phụ lục C; visual chuyên nghiệp; có 1 slide riêng cho AI Reflection
+Demo / Prototype
+Mock UI hoạt động (Figma prototype hoặc HTML mockup); flow chạy được
+Design Rationale Doc
+Bảng tổng hợp ≥10 quyết định lớn + lý do
+🧠 AI Audit Log v1.0 (TỔNG HỢP)
+Hợp nhất từ D1–D4, tối thiểu 25 entries. Có Executive Summary 1 trang: số prompt, số hallucination phát hiện, top 3 Human Delta moments
+Q&A Preparation
+Tất cả thành viên chuẩn bị; nhóm tự mock defense ≥1 lần
+Hand-out
+1 trang A4 tóm tắt project
+Oral Vivas readiness
+Mỗi thành viên đều có thể giải thích ≥2 entries trong Audit Log nếu được hội đồng hỏi
+7. AI Audit Log — Template + Ví dụ
+7.1. AI Audit Log là gì?
+AI Audit Log là nhật ký ghi lại toàn bộ tiến trình tương tác giữa bạn (nhóm) và các công cụ AI trong quá trình thực hiện project. Mục đích:
+Thể hiện reflection về giá trị AI đối với từng thành phần DTC.
+Là minh chứng cho 30% điểm Reflection trong Rubric Project.
+Hỗ trợ Oral Vivas — hội đồng có thể hỏi bất kỳ entry nào.
+7.2. Cấu trúc cột bắt buộc
+Cột
+Mô tả
+Ví dụ cho ITA301
+STT
+Số thứ tự liên tục
+1, 2, 3, …
+Tuần / Phase
+Tuần triển khai + phase RBL
+W4 / Phase 2 — Requirements
+DTC Component
+Thành phần DTC liên quan
+Decomposition / Pattern / Abstraction / Process
+AI Tool
+Tên công cụ AI sử dụng
+Claude / ChatGPT / Copilot / Gemini
+Prompt
+Nội dung câu lệnh đầy đủ (có context)
+"Cho project [tên] về [domain], hãy đề xuất các functional requirements cho module quản lý fleet drone…"
+AI Output (tóm tắt)
+Tóm tắt phản hồi AI (KHÔNG copy-paste toàn bộ)
+AI liệt kê 18 FRs cho fleet management module
+Decision & Refinement
+Quyết định nhóm: chấp nhận / chỉnh sửa / loại bỏ + LÝ DO
+Chấp nhận 12 FRs, gộp 4 FRs thành 2 vì lồng nhau, loại 2 FRs ngoài scope, bổ sung 3 FRs đặc thù UAV regulation VN
+Verification
+Kiểm chứng output AI (nếu có)
+Kiểm tra IEEE 830 spec — đúng cấu trúc; verify 1 regulation thực tế qua CAAV
+7.3. Ví dụ 5 entries mẫu cho ITA301
+Đây là 5 entries mẫu thực tế cho project Drone Delivery — minh họa cách viết Audit Log đạt mức Excellent:
+STT
+DTC + Phase
+Prompt (rút gọn)
+AI Output + Decision & Refinement
+1
+Decomposition
+(W2 — AS-IS)
+"Liệt kê stakeholders cho hệ thống delivery drone đô thị tại VN"
+▸ AI Output: 8 stakeholders (sender, receiver, pilot, operator, fleet manager, regulator, insurance, maintenance)
+▸ Decision: Bổ sung 2 stakeholders AI bỏ sót — building manager (cho landing pad rooftop) và air traffic control (LLNAS/UTM). Loại insurance vì ngoài scope project
+2
+Pattern Recognition
+(W3 — Risk register)
+"Liệt kê 10 risks điển hình cho dự án IT hệ thống delivery drone"
+▸ AI Output: 10 risks chung (schedule, scope creep, integration, security…)
+▸ Decision: Chấp nhận 7 risks generic, thay 3 risks bằng UAV-specific: regulation change (CAAV), weather dependency, battery degradation.
+⚠ Hallucination: AI nói "FAA Part 107" — đó là quy định Mỹ, không áp dụng VN
+3
+Abstraction
+(W6 — Class Diagram)
+"Vẽ Class Diagram cho entity Drone với đầy đủ thuộc tính và methods"
+▸ AI Output: 25 attributes (id, model, weight, battery, gps, sensors_list, firmware, last_maintenance, …) + 18 methods
+▸ Decision: Khái quát còn 12 core attributes + 5 methods cốt lõi. Đưa 13 thuộc tính chi tiết sang sub-class DroneSpec để follow Single Responsibility.
+▸ Rationale: ở mức conceptual không cần expose hết, follow encapsulation
+4
+Process/Algorithm
+(W6 — Sequence)
+"Vẽ Sequence Diagram cho use case Schedule Delivery Mission"
+▸ AI Output: Sequence với 8 messages, happy path only
+▸ Decision: Bổ sung 2 alternative flows: (a) GPS signal lost mid-mission → return-to-home, (b) weather alert → reschedule.
+▸ Verification: Tự trace lại trên bảng + reference PX4 doc
+5
+Pattern Recognition
+(W8 — Architecture)
+"So sánh Layered vs Microservices cho hệ thống quản lý fleet drone quy mô vừa"
+▸ AI Output: Bảng so sánh chung — kết luận Microservices "tốt hơn cho scalability"
+▸ Decision: Chọn Layered cho project scope (~5 modules, 1 team) vì microservices overhead deploy/monitor không justify được.
+⚠ Critical Thinking: AI bias toward "trending architecture" — nhóm cân nhắc context cụ thể
+7.4. Quy ước viết AI Audit Log
+Mỗi entry phải có rationale rõ ràng — không chỉ "tôi chấp nhận" mà phải "tôi chấp nhận vì..."
+Prompt phải đầy đủ context, không phải "phân rã ý tưởng này cho tôi" (mơ hồ).
+Output có thể tóm tắt 3–5 dòng, KHÔNG cần copy-paste toàn bộ phản hồi AI.
+Hallucination / fabrication phải được flag rõ — đây là điểm cộng cho Excellent.
+Cập nhật Audit Log SAU mỗi tuần làm việc, không để dồn cuối kỳ.
+Tối thiểu 25 entries tích lũy đến cuối D5 (≥5 entries mỗi deliverable).
+⚠️ CHÚ Ý: Các lỗi viết Audit Log thường gặp
+❌ Chỉ paste prompt + output, không có Decision/Refinement → Limited (mức 2)
+❌ Prompt mơ hồ, không context → mất điểm AI Communication
+❌ Không phát hiện được lỗi nào của AI → bị nghi ngờ "không thật sự dùng AI"
+❌ Tất cả entries cùng tone "AI gợi ý X, tôi chấp nhận X" → không có Human Delta
+❌ Để 1 thành viên viết toàn bộ Log → khi Oral Vivas hỏi member khác sẽ bí
+8. Rubric đánh giá — Bạn được chấm thế nào
+8.1. Rubric Project — RBL Insight (35% môn)
+Rubric theo thang 6 mức, công thức tính:
+Điểm đánh giá = Σ(trọng số × điểm mức độ) / Σ(trọng số)
+Điểm đánh giá THỰC theo thang 10 = Điểm đánh giá × 10 / 6
+Thành phần
+TS
+Excellent (6)
+Very Good (5)
+Good (4)
+Fair / Limited (1–3)
+🧠 AI Reflection (Human Delta)
+30%
+Thuyết minh logic về việc chỉnh AI; Prompt có cấu trúc; Log đầy đủ minh chứng
+Phát hiện hallucination; chỉ ra ≥1 hạn chế của AI + cách khắc phục
+Có danh sách Prompt + output khớp với log; có refine nhẹ
+Có Prompt + output (3) / Không có bằng chứng AI Reflection (2) / Không dùng AI (1)
+🔍 Decomposition
+20%
+Phân rã tốt, tự hiệu chỉnh modules AI gợi ý kèm giải trình sâu
+Phân tích đúng, logic tốt, giải trình sâu
+Phân tích đúng, nhận diện AI chia rườm rà
+Chưa đầy đủ, lệ thuộc AI (3) / Cần GV trợ giúp (2) / Không phân tích được (1)
+🔁 Pattern Recognition
+15%
+So sánh, mix Pattern tốt từ AI + giải thích sâu
+So sánh, chọn Pattern + giải thích tốt
+Nhận diện đúng pattern AI đề xuất + áp dụng hiệu quả
+Sai sót hoặc áp dụng máy móc (3) / Không nhận diện (2) / Không có bằng chứng (1)
+🎯 Abstraction
+15%
+Khái quát đúng, xác định mục tiêu chính, lược bỏ chi tiết AI
+Khái quát đúng, còn dư thừa thông tin từ AI
+Hiểu ý chính nhưng lúng túng khái quát lại
+Khó tách ý chính (3) / Cần hỗ trợ (2) / Không khái quát được (1)
+⚙️ Process / Algorithm
+20%
+Thiết kế tốt, cải tiến rõ rệt so với mẫu AI
+Thiết kế hợp lý, phát hiện lỗi cú pháp/logic nhỏ từ AI
+Cung cấp Prompt + mã giả AI sinh + giải thích
+Thiết kế thiếu case (3) / Code AI không chạy được (2) / Không thiết kế được (1)
+ℹ️ GHI CHÚ: Ví dụ tính điểm
+Giả sử nhóm bạn được chấm:
+  • Reflection: Good (4)
+  • Decomposition: Very Good (5)
+  • Pattern: Good (4)
+  • Abstraction: Good (4)
+  • Process: Very Good (5)
+Điểm = (30%×4 + 20%×5 + 15%×4 + 15%×4 + 20%×5) / 100% = 4.4 (thang 6)
+Điểm thực = 4.4 × 10/6 = 7.33/10
+8.2. Rubric Năng lực AI (đánh giá kèm)
+Bốn năng lực AI dưới đây được đánh giá song song với Rubric chính, dùng để định vị mức độ của bạn trong lộ trình 5 học kỳ:
+Năng lực AI
+Mức 1–2 (Yếu)
+Mức 3–4 (Trung bình–Khá)
+Mức 5–6 (Tốt–Xuất sắc)
+AI Communication
+Prompt mơ hồ, không context, 1 câu chung
+Prompt có context + yêu cầu cụ thể, có format output
+Prompt chuỗi chain, chiến lược, meta-instructions; biết khi nào dừng AI và tự làm
+AI Evaluation
+Nhận output nguyên văn, không đánh giá
+Phát hiện lỗi cú pháp / logic hoặc thiếu trường hợp xử lý
+Phát hiện hallucination / fabrication / bias, đối chiếu nguồn uy tín
+AI Collaboration
+Không dùng AI hoặc copy 100%
+Chọn lọc gợi ý AI: chấp nhận một số, từ chối một số, có lý do
+Mix nhiều gợi ý + ý tưởng riêng → giải pháp mới; dùng nhiều AI tools
+AI Responsibility
+Không nhận thức đạo đức / không ghi log đầy đủ
+Nộp Audit Log đầy đủ, phân biệt ranh giới AI vs nhóm tự làm
+Nhận diện rủi ro AI (bias, privacy), có chiến lược phòng tránh; xây quy tắc cho team
+8.3. Rubric Lab (15% môn)
+Lab
+%
+Tiêu chí chính
+Lab 1 (W1–W3)
+5%
+Stakeholder mapping + business case + risk register; minh chứng họp ≥3 lần; Audit Log ≥3 entries
+Lab 2 (W4–W6)
+5%
+SRS theo IEEE 830 + UML/DFD; peer review evidence; Audit Log ≥8 entries tích lũy
+Lab 3 (W7–W9)
+5%
+UI wireframes + physical data model + architecture; QA plan; Audit Log ≥18 entries tích lũy
+⚠️ CHÚ Ý: Tự động bị trừ điểm nặng nếu
+❌ DFD không balanced → -2 điểm Modeling
+❌ Use cases <8 hoặc thiếu alternative flow → -3 điểm SRS
+❌ Chỉ có 1 architecture, không trade-off → -3 điểm Design
+❌ Không có Security threat model → -2 điểm Design
+❌ KHÔNG có AI Audit Log → mất 30% điểm Project = 10.5% tổng môn
+❌ AI Audit Log <25 entries cuối kỳ → giảm Reflection xuống Pass/Limited
+❌ Audit Log mọi entry đều "AI gợi ý X, tôi chấp nhận X" → Reflection Limited
+❌ Plagiarism (>20% Turnitin) → 0 điểm Project
+❌ Nộp trễ → -1 điểm/ngày
+9. Sample topics — Gợi ý đề tài UAV
+Bạn có thể chọn 1 đề tài bên dưới, hoặc đề xuất đề tài mới (cần GV duyệt ở W2). Đề tài càng có stakeholder thật càng tốt.
+#
+Đề tài
+Sub-domain
+Độ phức tạp
+1
+Hệ thống quản lý đội drone giao hàng đô thị
+Delivery UAV
+⭐⭐⭐
+2
+Nền tảng điều phối drone phun thuốc nông nghiệp
+Agricultural UAV
+⭐⭐⭐
+3
+Hệ thống tuần tra an ninh KCN bằng drone
+Surveillance UAV
+⭐⭐⭐
+4
+Khảo sát địa hình & bản đồ 3D cho xây dựng
+Mapping & Survey
+⭐⭐⭐⭐
+5
+Kiểm tra đường dây điện cao thế bằng drone + AI
+Inspection UAV
+⭐⭐⭐⭐
+6
+UTM (UAS Traffic Management) cho không phận đô thị
+Regulatory / Fleet
+⭐⭐⭐⭐
+7
+Drone cứu hộ – tìm kiếm người mất tích
+Emergency Response
+⭐⭐⭐
+8
+Marketplace cho thuê drone & phi công theo giờ
+Sharing Economy
+⭐⭐
+9
+Training & certification cho phi công drone
+Education
+⭐⭐
+10
+Quản lý đội robot giao hàng tự hành (AGV)
+Autonomous Ground
+⭐⭐⭐⭐
+Template problem statement
+💡 TIP: Cấu trúc problem statement chuẩn
+"[Tên tổ chức/ngành UAV] hiện đang gặp vấn đề [business problem cụ thể], gây ra [hệ quả đo lường được: cost, time, risk]. Hệ thống [tên đề tài] được thiết kế để [giải pháp core] thông qua [cơ chế chính], phục vụ stakeholders [danh sách], trong phạm vi [scope rõ ràng]."
+10. Checklist tổng — Self-check trước khi nộp
+10.1. Trước khi nộp D1 (Proposal)
+Stakeholder mapped ≥5 (primary, secondary, regulatory)
+Pain points đo lường được (số liệu cụ thể)
+Scope rõ in/out, không "mọi thứ"
+Business case có ROI sơ bộ
+WBS + risk register ≥5 risks
+🧠 AI Audit Log v0 ≥5 entries với rationale rõ ràng
+10.2. Trước khi nộp D2 (SRS)
+≥15 FRs với priority (Must/Should/Could)
+≥5 NFR categories có ngưỡng định lượng
+≥8 use cases với alternative flow
+User stories có Given-When-Then
+Cấu trúc đúng IEEE 830 sections
+🧠 AI Audit Log tích lũy ≥10 entries
+10.3. Trước khi nộp D3 (Models)
+DFD Level 0 + Level 1 balanced
+Class Diagram có multiplicity đúng
+≥3 Sequence + ≥2 Activity Diagram
+ERD 3NF + data dictionary đầy đủ
+Traceability matrix SRS ↔ Models hoàn chỉnh
+🧠 AI Audit Log tích lũy ≥15 entries — có ít nhất 1 entry Abstraction "lược bỏ AI gợi ý"
+10.4. Trước khi nộp D4 (SDD)
+≥3–5 UI wireframes + user journey map (Figma / Balsamiq / mock)
+Architecture có ≥2 alternatives + trade-off matrix
+Physical data schema + indexing
+Tech stack có justification (KHÔNG cần PoC)
+Security threat model — 3–5 threats chính
+QA plan với test cases mapping cho 3–5 UCs quan trọng
+Deployment topology mức tổng quan
+🧠 AI Audit Log tích lũy ≥20 entries — có ≥1 entry Pattern "so sánh ≥2 architecture"
+10.5. Trước Defense (W10–W11)
+Slide ~20 slides + 1 slide riêng cho AI Reflection summary
+Demo prototype / Figma chạy được
+Design rationale doc ghi ≥10 quyết định lớn
+Hand-out 1 trang tóm tắt project
+🧠 AI Audit Log v1.0 ≥25 entries + Executive Summary
+🧠 Mỗi thành viên đều có thể giải thích ≥2 entries Audit Log nếu hội đồng hỏi
+Tất cả thành viên đã mock Q&A ≥1 lần
+Phụ lục A — Kỹ năng làm việc nhóm RBL
+A.1. Nguyên tắc nhóm RBL
+Mỗi nhóm có 1 Team Lead — không phải "leader chỉ đạo" mà là người điều phối lịch họp, theo dõi tiến độ, liên lạc với GV.
+Mỗi thành viên có vai trò chuyên môn rõ ràng (xem bảng phân công bên dưới) — nhưng tất cả phải hiểu toàn pipeline.
+Nhóm họp tối thiểu 1 lần/tuần (offline hoặc online), có biên bản ngắn (10 dòng): đã làm gì, sẽ làm gì, chặn ở đâu.
+Mọi deliverable phải có ít nhất 2 thành viên review trước khi nộp — KHÔNG nộp bản 1-người-viết.
+A.2. Công cụ đề xuất
+Mục đích
+Công cụ đề xuất
+Ghi chú
+Quản lý task
+Trello / Notion / GitHub Projects
+Mỗi task có owner + deadline
+Lưu trữ tài liệu
+Google Drive / OneDrive (folder nhóm)
+Đặt tên file theo quy ước thống nhất
+Phiên bản code/data
+GitHub / GitLab
+BẮT BUỘC cho môn có code
+Liên lạc nhanh
+Zalo / Discord / Microsoft Teams
+1 channel cho cả nhóm + GV
+Họp online
+Google Meet / Zoom
+Ghi nhớ ghi biên bản
+Vẽ diagram / wireframe
+draw.io / Figma / Excalidraw
+Lưu file gốc, không chỉ ảnh PNG
+A.3. Quy ước đặt tên file
+Để tránh nhầm lẫn version, nhóm dùng quy ước:
+[Mã môn]_[Group]_[Deliverable]_[YYYYMMDD]_v[N].docx
+Ví dụ: DTA301_G05_D2_Baseline_20260615_v3.docx
+A.4. Xử lý xung đột / "free-rider"
+Tuần 1 — Lập "Team Charter": ai làm gì, ai chịu trách nhiệm, cách giải quyết khi không đồng ý.
+Tuần 4 — Mid-team check: đánh giá ngang hàng nhanh (mỗi người chấm các thành viên khác từ 1–5).
+Có vấn đề nghiêm trọng → báo GV TRƯỚC TUẦN 7 (mid-term). KHÔNG để đến cuối kỳ.
+GV có thể điều chỉnh % đóng góp cá nhân nếu có bằng chứng peer review nhất quán.
+⚠️ CHÚ Ý: Tránh các sai lầm phổ biến
+❌ Để 1 người gánh: nộp bài → nhóm fail rubric.
+❌ Bỏ họp tuần: mất nhịp, đến W8 mới panic.
+❌ Không dùng Git: 2 người sửa cùng file → mất data.
+❌ Đợi GV nhắc: GV không phải "babysitter" — bạn chủ động hỏi.
+Phụ lục B — AI Usage Declaration (Bắt buộc)
+Theo quy định của Khoa, mọi deliverable RBL có sử dụng công cụ AI (ChatGPT, Claude, Gemini, Copilot, Cursor, Midjourney…) đều phải có khai báo sử dụng AI trong báo cáo cuối.
+B.1. Vì sao cần khai báo?
+Đảm bảo tính minh bạch và liêm chính học thuật.
+Giúp GV đánh giá đúng đóng góp của bạn so với của AI.
+Giúp bạn tự nhận thức rõ vai trò của AI trong quá trình học.
+B.2. Template khai báo AI Usage
+✅ BẮT BUỘC: Bắt buộc đặt ở đầu hoặc phụ lục báo cáo cuối
+AI Tools Used: [Liệt kê tên: Claude, ChatGPT, Copilot, Cursor, …]
+Mục đích sử dụng: [Tìm tài liệu / Giải thích khái niệm / Sinh code / Sửa lỗi / Edit ngôn ngữ / Sinh test data / …]
+Phần nội dung có dùng AI: [Mục cụ thể: "Phần 3.2 - data cleaning script", "Phần 5 - English polishing"…]
+Phần nội dung KHÔNG dùng AI: [Mục cụ thể: "Phần 4 - phân tích kết quả", "Toàn bộ Section Discussion"…]
+Mức độ chỉnh sửa của nhóm: [Nguyên văn / Edit nhẹ / Edit nặng / Chỉ tham khảo ý tưởng]
+Cam kết: "Nhóm đã review và chịu trách nhiệm về toàn bộ nội dung trong báo cáo."
+B.3. Nguyên tắc dùng AI cho RBL
+✅ ĐƯỢC dùng AI để: tìm tài liệu, giải thích khái niệm khó, debug code, edit câu chữ tiếng Anh, brainstorm idea, sinh test case.
+❌ KHÔNG được dùng AI để: viết hoàn toàn báo cáo, sinh "fake data" cho experiment, làm bài Progress Test / Final Exam.
+⚠️ Cảnh báo: AI thường tạo ra references không tồn tại — luôn verify mọi citation trước khi đưa vào báo cáo.
+⚠️ CHÚ Ý: Vi phạm liêm chính học thuật
+Nộp bài AI-generated mà không khai báo, hoặc khai báo sai sự thật → có thể bị xử lý theo quy chế kỷ luật học vụ của Trường (mức nặng nhất: hủy điểm môn).
+Phụ lục C — Mẹo bảo vệ trước hội đồng (Week 11)
+C.1. Cấu trúc slide đề xuất (15 phút)
+#
+Slide
+Thời lượng
+Nội dung chính
+1
+Title
+15s
+Đề tài, nhóm, môn, ngày
+2
+Bài toán
+1.5 min
+Stakeholder, pain point, scope rõ
+3
+Tại sao quan trọng
+1 min
+Số liệu, motivation, gap
+4
+Phương pháp
+2 min
+Pipeline, approach, lý do chọn
+5
+Kiến trúc / mô hình
+2 min
+Diagram chính, flow
+6–8
+Kết quả
+4 min
+Demo / dashboard / model output / metrics
+9
+Trade-off & Limitations
+1.5 min
+Cái gì không làm được, vì sao
+10
+Future improvement
+1 min
+Hướng phát triển nếu có thêm thời gian
+11
+Đóng góp & Bài học
+1 min
+Mỗi thành viên đóng góp gì, học được gì
+12
+Q&A
+—
+Slide cảm ơn + thông tin liên hệ
+C.2. 10 câu hỏi hội đồng thường hỏi
+"Tại sao chọn approach này mà không phải approach khác?" → Trade-off analysis
+"Nếu dataset gấp 10 lần, hệ thống có scale được không?" → Scalability
+"Bạn đã verify kết quả như thế nào?" → Validation method
+"Limitation lớn nhất là gì?" → Self-awareness
+"Nếu làm lại, bạn sẽ đổi gì?" → Reflection
+"Có baseline so sánh chưa?" → Benchmark
+"Stakeholder thật sự cần cái này không?" → Problem validation
+"Phần này AI làm hay nhóm làm?" → Honesty about AI usage
+"Bạn (cá nhân) đã làm phần nào?" → Individual contribution
+"Hệ thống deploy thực được không?" → Production-readiness
+C.3. Quy tắc trả lời Q&A
+Nghe HẾT câu hỏi rồi mới trả lời. Nếu không hiểu, lịch sự xin nhắc lại.
+Trả lời thẳng vào câu hỏi. KHÔNG vòng vo.
+Không biết → "Em chưa khảo sát phần này, em sẽ ghi nhận và tìm hiểu thêm." (Hội đồng tôn trọng sự trung thực.)
+Không tranh cãi gay gắt với hội đồng. Lập luận có dữ liệu, không cảm tính.
+Tất cả thành viên cùng chuẩn bị Q&A — KHÔNG để 1 người trả lời tất cả.
+💡 TIP: Mock defense — bài tập "tự cứu mình"
+Tuần 9 hoặc 10: nhóm tự tổ chức 1 buổi mock defense trong nhóm. Mỗi người đóng vai "hội đồng khó tính", hỏi nhau những câu khó nhất. Đây là cách hiệu quả nhất để giảm 80% rủi ro "bí" trên hội đồng thật.
+Chúc nhóm bạn có một học kỳ ITA301 nhiều insight — và một AI Audit Log đáng tự hào!
+— Khoa CNTT, FPT University HCM — Phiên bản 2.0 (RBL Insight Integration)

@@ -1,0 +1,441 @@
+HƯỚNG DẪN SINH VIÊN
+THỰC HIỆN RESEARCH-BASED LEARNING (RBL)
+Môn DSS301 – Decision Support Systems For Business Intelligence
+Summer 2026
+Tài liệu này hướng dẫn toàn bộ quá trình thực hiện hoạt động Research-Based Learning (RBL) trong môn DSS301, từ việc xác định bài toán ra quyết định, thu thập và xử lý dữ liệu, xây dựng mô hình phân tích, thiết kế dashboard, đến đề xuất khuyến nghị quyết định.Sinh viên sẽ thực hiện một dự án DSS hoàn chỉnh theo pipeline thực tế: Problem→Data→Model→Dashboard→Decision.Đọc kỹ tài liệu này trước khi bắt đầu giai đoạn Phase 1 (Tuần 1) để nắm rõ yêu cầu và lộ trình thực hiện.
+I. Tổng quan môn học
+Hạng mục
+Mô tả
+Mã môn / Tên môn
+DSS301 — Decision Support System (Hệ thống hỗ trợ ra quyết định)
+Số tín chỉ
+03 tín chỉ (150h học)
+Cấu trúc thời lượng
+10 tuần — 5 phase × 2 tuần/phase
+Tiên quyết
+PRJ302
+RBL Level
+Junior — Applied Research
+Research Theme
+Decision Support for Drone / UAV / Autonomous Vehicle Operations
+Research Mode
+End-to-end DSS pipeline: Problem → Data → Model → Dashboard → Recommendation
+Công cụ chính
+Power BI, Tableau, Weka, Orange, Decision Explorer, Python (pandas, scikit-learn), R
+Ban hành
+Khoa CNTT — FPT University HCM; pilot Spring 2026
+1.1. Research-Based Learning trong DSS301
+DSS301 được định vị ở Junior Level (Applied Research) theo RBL Unified Guide 2026. Sinh viên thực hiện một dự án Hệ thống hỗ trợ ra quyết định (DSS) hoàn chỉnh trong lĩnh vực vận hành Drone / UAV / Autonomous Vehicles, đi qua toàn bộ pipeline: xác định bài toán → xử lý dữ liệu → xây dựng mô hình → trực quan hóa → đưa ra khuyến nghị quyết định.
+1.2. Mục tiêu học phần 
+Về kiến thức
+Hiểu bản chất và tầm quan trọng của hệ thống hỗ trợ ra quyết định trong doanh nghiệp / vận hành UAV.
+Nhận diện các loại DSS khác nhau và các ứng dụng tương ứng.
+Nắm vững cấu trúc và các thành phần của một DSS.
+Hiểu các phương pháp, quy trình xây dựng và quản lý một DSS.
+Hiểu các thuật toán và kỹ thuật cơ bản được sử dụng trong DSS.
+Nhận thức các khía cạnh đạo đức và tác động xã hội của DSS.
+Về kỹ năng
+Thiết kế và phát triển DSS sử dụng các công cụ phần mềm và ngôn ngữ lập trình phù hợp.
+Đánh giá hiệu quả của DSS và đề xuất các cải tiến.
+Ghi nhớ: RBL trong DSS301 là applied research, nghĩa là bạn không làm nghiên cứu học thuật mà tập trung vào việc áp dụng kiến thức để giải quyết bài toán thực tế theo quy trình DSS.
+II. Research Theme: Drone / UAV / Autonomous Vehicles
+DSS301 sử dụng vận hành Drone / UAV / Autonomous Vehicles làm bối cảnh chính cho RBL project. Các lý do chọn:
+Decision-rich domain: mỗi tình huống UAV đều có nhiều quyết định (mission planning, route, maintenance, airspace…).
+Dataset khả dụng: flight logs, telemetry, maintenance, weather, UTM, incident reports.
+Đa dạng stakeholder: pilot, fleet operator, regulator, customer — phù hợp phân tích DSS đa người dùng.
+Liên thông liên môn: chuỗi Drone gồm ITA301 (System Design), DTA301 (Data Analysis), KMS301 (Knowledge Management).
+Gắn với AIC Lab & SHTP Conference — sản phẩm có thể mở rộng thành Capstone hoặc demo triển lãm.
+Ghi chú: Sinh viên không bắt buộc phải hiểu sâu về kỹ thuật UAV, mà cần tập trung vào bài toán ra quyết định trong bối cảnh UAV. Domain chỉ đóng vai trò làm ngữ cảnh cho DSS.
+III. Cấu trúc đánh giá RBL
+Theo syllabus chính thức, DSS301 có 6 thành phần đánh giá. Kế hoạch RBL tích hợp 4 assignment thành một dự án thống nhất, đồng thời giữ nguyên Progress Test và Final Exam theo quy định chung.
+Thành phần đánh giá
+Loại
+Trọng số
+CLO ánh xạ
+Phase RBL
+Data Identification Assignment
+On-going
+10%
+CLO1, CLO2, CLO3
+Phase 2 (W3–4)
+Analytics Assignment
+On-going
+10%
+CLO4, CLO5, CLO6
+Phase 3 (W5–6)
+Visualization Assignment
+On-going
+10%
+CLO3, CLO4, CLO5
+Phase 4 (W7–8)
+Project Presentation
+On-going
+10%
+CLO1–CLO8 (tổng hợp)
+Phase 5 (W9–10)
+Progress Test (3 bài)
+On-going
+30%
+CLO1–CLO7
+W4, W7, W10
+Final Exam
+Final
+30%
+CLO1–CLO8
+Cuối kỳ
+TỔNG
+—
+100%
+—
+Điểm đạt ≥ 5.0
+IV. Pipeline DSS — 5 bước
+Mỗi nhóm sinh viên phải thực hiện đầy đủ pipeline 5 bước sau — đây là cấu trúc chuẩn của một DSS thực tế và cũng là xương sống đánh giá RBL:
+Bước
+Thành phần
+Input
+Output
+1
+Decision Problem
+Business context UAV, stakeholder (pilot, operator, regulator)
+Problem statement, decision workflow
+2
+Data Preparation
+Raw data (flight log, telemetry, GPS, incident)
+Clean dataset, feature set, EDA insight
+3
+Decision Model
+Clean dataset, domain rules UAV
+Rule-based / ML model, metrics, comparison
+4
+Dashboard
+Model output, KPI, user flow cho operator/pilot
+Interactive dashboard (Power BI/Tableau)
+5
+Decision Recommendation
+Dashboard insight, scenario
+Decision report, trade-off, ethics, demo
+Ghi chú: Pipeline DSS là phần quan trọng nhất của môn học. Sinh viên cần đảm bảo:
+Không bỏ qua bất kỳ bước nào 
+Không làm ngược thứ tự (ví dụ: làm dashboard trước khi có model) 
+Mỗi bước phải có output rõ ràng để phục vụ bước tiếp theo
+4.1. Công cụ được sử dụng
+Nhóm công cụ
+Tên công cụ
+Vai trò trong RBL project
+Data Quality
+Magic Quadrant tools, OpenRefine
+Đánh giá & làm sạch dữ liệu UAV telemetry
+Analytics / ML
+Weka, Orange, Analytica, scikit-learn
+Xây dựng & đánh giá mô hình quyết định
+Visualization
+Power BI, Tableau, GapMinder
+Thiết kế dashboard cho UAV operator
+Decision Modeling
+Decision Explorer
+Cây quyết định, what-if analysis cho UAV mission
+Lập trình (tùy chọn)
+Python (pandas, scikit-learn), R
+Pipeline tích hợp, preprocessing, ML
+V. Chi tiết thực hiện 10 tuần
+Kế hoạch được chia thành 5 phase, mỗi phase kéo dài 2 tuần. Các deliverable chính tương ứng với 4 assignment trong syllabus được nộp vào cuối các phase 2, 3, 4 và 5.
+Tuần
+Phase
+Nội dung syllabus
+Hoạt động RBL (công việc chính)
+Deliverable / Mốc
+W1
+P1 — Decision Problem
+Giới thiệu khóa học; tổng quan DSS & RBL
+RBL Kickoff: giới thiệu DSS pipeline & theme Drone/UAV
+Demo tools: Power BI, Weka, Orange, Decision Explorer
+Chia sẻ case study DSS UAV (fleet dispatching, predictive maintenance)
+Thành lập nhóm 3–5 SV; đăng ký domain UAV
+Danh sách nhóm + domain sơ bộ
+W2
+P1 — Decision Problem
+Ch1 Intro to DSS; Ch2 Decision Making
+Xác định decision maker & stakeholder UAV (pilot, operator, regulator)
+Input / Output decision; decision workflow
+Viết Problem Statement (1–2 trang)
+GV phê duyệt đề tài
+Problem Statement + Decision Workflow
+W3
+P2 — Data Component
+Ch3 Data Component; demo data cleaning
+Tìm & chọn dataset UAV (Kaggle, flight logs, telemetry)
+Data cleaning: missing, outlier, type casting
+Feature selection theo decision problem
+Lập data dictionary
+Clean dataset + Data dictionary
+W4
+P2 — Data Component
+EDA chi tiết; Progress Test 1 (Quiz 01)
+📝 Progress Test 1 (CLO1–CLO3)
+EDA: descriptive, correlation, distribution
+Rút ra ≥3–5 insight phục vụ decision
+Viết Data Report 5–8 trang
+PT1 + ✅ D1 — Data Report (10%)
+W5
+P3 — Model Component
+Ch4 Model Component; Ch4s Intelligence & DSS
+Quyết định loại mô hình: rule-based / ML classification / regression
+Triển khai mô hình chính + mô hình so sánh
+Training trên dataset UAV, log hyperparameter
+Prediction thử trên tập test
+Model prototype
+W6
+P3 — Model Component
+Metrics đánh giá; Mid-term Review
+Evaluation: accuracy, precision, recall, F1, RMSE, MAE
+So sánh ≥2 mô hình, giải thích lựa chọn cuối
+Mid-term Review: mỗi nhóm 5–7′ + Q&A
+Viết Model Report 5–8 trang
+✅ D2 — Model Report (10%)
+W7
+P4 — Visualization
+Ch10 Executive Information & Dashboards; PT2
+📝 Progress Test 2 (CLO4–CLO6)
+Xác định 3–7 KPI chính cho UAV operator
+Thiết kế wireframe dashboard (Figma / PPT)
+Chọn chart type; user flow dashboard → decision
+PT2 + Dashboard wireframe + KPI list
+W8
+P4 — Visualization
+Hands-on Power BI / Tableau
+Triển khai dashboard hoàn chỉnh
+Tích hợp output model vào dashboard
+Filter, drill-down, interactive elements
+Testing với dữ liệu thật; viết user guide 1–2 trang
+✅ D3 — Interactive Dashboard (10%)
+W9
+P5 — Decision & Demo
+Ch9 Implementation & Evaluation; Ethics trong DSS
+Scenario analysis (best / worst / realistic case)
+Trade-off giữa các lựa chọn UAV operation
+Ethics discussion: bias, fairness, privacy airspace
+Viết Decision Report draft
+Decision Recommendation + Scenario analysis
+W10
+P5 — Decision & Demo
+Final Presentation; PT3; ôn Final Exam
+📝 Progress Test 3 (CLO7–CLO8)
+Chuẩn bị slide 15–20 + live demo DSS
+Trình bày 10–15′ + Q&A 5′ toàn pipeline
+Nộp package cuối: /data/ + /model/ + /dashboard/ + report + slides + README
+PT3 + ✅ D4 — Final Presentation (10%)
+Ghi chú: Các deliverable D1 → D4 không tách rời mà liên kết chặt chẽ theo pipeline. Kết quả của mỗi phase sẽ là đầu vào cho phase tiếp theo, vì vậy cần làm cẩn thận ngay từ đầu để tránh ảnh hưởng toàn bộ project.
+5.1. Bảng tóm tắt timeline
+Tuần
+W1
+W2
+W3
+W4
+W5
+W6
+W7
+W8
+W9
+W10
+Phase
+P1
+P1
+P2
+P2
+P3
+P3
+P4
+P4
+P5
+P5
+Deliverable
+D1
+D2
+D3
+D4
+Progress Test
+PT1
+PT2
+PT3
+Milestone
+Kickoff
+Approve
+Clean
+EDA
+Model
+Mid-term
+Design
+Implement
+Recommend
+Defense
+Chú thích: P1 = Decision Problem; P2 = Data Component; P3 = Model Component; P4 = Visualization; P5 = Decision & Evaluation.
+VI. Phân công đề xuất trong nhóm
+Vai trò
+Trách nhiệm chính
+Deliverable phụ trách
+Project Manager
+Lập kế hoạch, theo dõi tiến độ, họp nhóm, liên lạc GV
+Report tổng hợp
+Data Engineer
+Thu thập, làm sạch, EDA, feature selection
+D1 — Data Report
+Data Scientist / Modeler
+Xây dựng mô hình, đánh giá, so sánh
+D2 — Model Report
+Dashboard Designer
+Thiết kế UX, triển khai Power BI / Tableau
+D3 — Dashboard
+Business Analyst / Presenter
+Phân tích decision, scenario, thuyết trình
+D4 — Presentation
+VII. Ví dụ đề tài theo Drone/UAV/AV
+Các đề tài sau đây phù hợp với Junior Level, có dataset hoặc có thể mô phỏng dễ dàng. Sinh viên có thể chọn hoặc đề xuất đề tài tương tự.
+#
+Đề tài DSS theo Drone/UAV/AV
+Decision Maker
+Dataset gợi ý
+1
+DSS cho điều phối đội drone giao hàng (fleet dispatching)
+Fleet operations manager
+OpenStreetMap + synthetic orders
+2
+DSS cho lập lịch bay UAV nông nghiệp theo thời tiết
+Agri service manager
+Weather API + field data
+3
+DSS dự báo rủi ro và xin cấp phép không phận (UTM)
+Airspace regulator
+Synthetic UTM + NOTAM
+4
+DSS bảo trì dự đoán cho fleet drone
+Maintenance manager
+Drone maintenance logs
+5
+DSS phân bổ drone cứu hộ trong tình huống khẩn cấp
+Emergency response coordinator
+Simulation data
+6
+DSS định tuyến cho xe tự hành giao hàng (AGV)
+Logistics manager
+NYC Taxi + AGV sim
+7
+DSS quản lý pin & sạc cho fleet drone
+Operations engineer
+Flight log + battery telemetry
+8
+DSS phân tích sự cố UAV & khuyến nghị cải tiến an toàn
+Safety officer
+NTSB incident + internal logs
+9
+DSS định giá dịch vụ khảo sát 3D bằng drone
+Business development
+Project bid + cost data
+10
+DSS giám sát vi phạm không phận đô thị
+Urban airspace authority
+Radar + flight plan data
+Ghi chú: Sinh viên có thể chọn đề tài ngoài danh sách, nhưng phải đảm bảo:
+Có dữ liệu khả dụng 
+Có yếu tố ra quyết định rõ ràng 
+Phù hợp với DSS pipeline
+VIII. Package nộp cuối kỳ
+Sau Week 10, mỗi nhóm nộp một package hoàn chỉnh gồm:
+STT
+Tên file / thư mục
+Mô tả
+1
+/data/
+Raw dataset + clean dataset + data dictionary
+2
+/model/
+Source code model + trained model + evaluation log
+3
+/dashboard/
+File .pbix / link Tableau + user guide
+4
+Decision Report.docx
+Báo cáo tổng hợp 15–25 trang, gồm toàn bộ pipeline và khuyến nghị
+5
+Presentation.pptx
+Slide thuyết trình 15–20 slides dùng cho Final Presentation
+6
+README.md
+Hướng dẫn chạy lại toàn bộ pipeline, liên hệ thành viên nhóm
+IX. Checklist sinh viên
+Phase 1 — Decision Problem
+Xác định rõ decision maker và stakeholder UAV
+Problem Statement được GV duyệt
+Decision Workflow đã vẽ
+Phase 2 — Data Component
+Dataset đủ kích thước và chất lượng
+Quy trình cleaning được ghi chép rõ
+Có ≥3–5 insight từ EDA
+Đã nộp D1
+Phase 3 — Model Component
+Xây dựng ≥1 mô hình chính + 1 mô hình so sánh
+Có metrics đánh giá rõ ràng
+Đã nộp D2 và tham gia Mid-term Review
+Phase 4 — Visualization
+Dashboard có 3–7 KPI chính
+Chart phù hợp, có tính tương tác
+Dashboard tích hợp với output của model
+Đã nộp D3
+Phase 5 — Decision & Demo
+Khuyến nghị quyết định rõ ràng, có căn cứ
+Có scenario analysis và trade-off
+Có thảo luận ethics và limitations (đặc biệt airspace, PII)
+Presentation hoàn chỉnh, demo chạy được
+X. Common Mistakes (Các lỗi sinh viên thường gặp)
+1. Phase 1 — Decision Problem
+Lỗi thường gặp:
+Chọn đề tài nhưng không rõ decision maker là ai
+Problem quá chung chung (“optimize system”, “improve performance”)
+Không có workflow ra quyết định
+Cách làm đúng:
+Xác định rõ:
+Ai ra quyết định?
+Quyết định gì?
+Input → Process → Output
+Viết Problem Statement cụ thể (có context UAV)
+2. Phase 2 — Data
+Lỗi thường gặp:
+Dataset không liên quan đến problem
+Không làm sạch dữ liệu (missing, outlier)
+EDA chỉ mô tả, không có insight
+Cách làm đúng:
+Data phải phục vụ decision
+Có ít nhất:
+Cleaning process rõ ràng
+3–5 insight liên quan trực tiếp decision
+3. Phase 3 — Model
+Lỗi thường gặp:
+Chọn model quá phức tạp (deep learning không cần thiết)
+Không giải thích vì sao chọn model
+Không so sánh model
+Cách làm đúng:
+Dùng model phù hợp:
+Decision tree / Random Forest / Regression
+So sánh ≥ 2 model
+4. Phase 4 - Dashboard
+Lỗi thường gặp:
+Dashboard nhiều chart nhưng không phục vụ decision
+KPI không rõ ràng
+Không có user flow
+Cách làm đúng:
+3–7 KPI quan trọng
+Dashboard trả lời câu hỏi: “Người ra quyết định cần thấy gì?”
+Có:
+Filter
+Drill-down
+Interaction
+5. Phase 5 - Decision
+Lỗi thường gặp:
+Không đưa ra recommendation rõ ràng
+Chỉ mô tả dữ liệu, không kết luận
+Không có scenario
+Cách làm đúng:
+Phải có:
+Best case / Worst case / Realistic case
+Decision phải:
+Có logic
+Có dẫn chứng từ data

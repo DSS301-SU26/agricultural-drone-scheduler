@@ -25,6 +25,8 @@ def main():
         subset=["location_name", "timestamp"],
         keep="last",
     )
+    # Sắp xếp lại theo địa điểm và thời gian để dễ nhìn
+    df_weather = df_weather.sort_values(["location_name", "timestamp"])
     print(
         f"   -> Loại {before_dedup - len(df_weather)} dòng forecast trùng "
         "(location_name, timestamp)."

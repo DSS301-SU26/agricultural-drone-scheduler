@@ -1,0 +1,87 @@
+Dự án: Hệ thống Hỗ trợ Ra quyết định Điều phối Đội Drone Giao hàng Chặng cuối (Fleet Dispatching DSS)
+Môn học: Decision Support Systems for Business Intelligence (DSS301)
+Học kỳ: Summer 2026
+Trạng thái tài liệu: Giai đoạn đầu Phase 3 (Week 5) 
+Học kỳ: Summer 2026
+Contents
+1. Giới thiệu1
+2. Quyết định loại mô hình2
+3. Chuẩn bị dữ liệu2
+4. Tiền xử lý dữ liệu3
+5. Mô hình chính và mô hình so sánh3
+5.1. Mô hình chính: Logistic Regression3
+5.2. Mô hình so sánh: Random Forest3
+6. Training trên dataset UAV4
+7. Log hyperparameter4
+8. Prediction trên tập test4
+1. Giới thiệu
+Trong giai đoạn này, nhóm thực hiện xây dựng mô hình hỗ trợ ra quyết định cho bài toán vận hành UAV dựa trên dữ liệu telemetry và thông tin chuyến bay. Mục tiêu của mô hình là dự đoán trạng thái chuyến bay flight_status để hỗ trợ đánh giá xem một chuyến bay có thể hoàn thành bình thường hay rơi vào trạng thái không hoàn thành. Đây là một bài toán phân loại nhãn, phù hợp với hướng tiếp cận Machine Learning Classification hơn là Regression.
+Dữ liệu sử dụng trong bài toán gồm các thuộc tính liên quan đến drone, payload, điều kiện bay, tải trọng, độ chính xác GPS, tốc độ gió, và các đặc trưng liên quan đến tình trạng chuyến bay. Trên cơ sở đó, nhóm tiến hành tiền xử lý dữ liệu, xây dựng mô hình chính, xây dựng mô hình so sánh, và đánh giá kết quả trên tập kiểm tra.
+2. Quyết định loại mô hình
+Sau khi phân tích bản chất của biến mục tiêu flight_status, nhóm quyết định lựa chọn ML classification làm phương pháp chính. Lý do là flight_status là biến phân loại, không phải biến số liên tục. Vì vậy, regression không phù hợp với bài toán này.
+Ngoài ra, nhóm không chọn rule-based là mô hình chính vì mục tiêu của deliverable là xây dựng một mô hình học từ dữ liệu UAV thực tế để dự đoán trạng thái chuyến bay dựa trên các đặc trưng đầu vào. Tuy nhiên, trong quá trình triển khai, nhóm có cân nhắc việc xử lý mất cân bằng lớp bằng cách gộp các lớp hiếm thành một lớp Non-completed để giúp mô hình học ổn định hơn.
+3. Chuẩn bị dữ liệu
+Dataset UAV ban đầu có 527 dòng và 25 cột. Trong quá trình khảo sát dữ liệu, nhóm nhận thấy cột notes có phần lớn giá trị bị thiếu nên được loại bỏ khỏi tập đầu vào. Ngoài ra, các cột mang tính định danh như drone_id, operator_id, regulatory_approval_id, và flight_date cũng được loại bỏ vì không đóng góp nhiều cho khả năng dự đoán và có thể làm nhiễu mô hình.
+Biến mục tiêu ban đầu là flight_status với 3 nhãn:
+Completed
+Aborted
+Landed Unexpectedly
+Tuy nhiên, phân phối nhãn bị mất cân bằng rất mạnh, trong đó Completed chiếm đa số tuyệt đối. Để làm cho bài toán phù hợp hơn với mô hình phân loại nhị phân, nhóm đã gộp hai nhãn hiếm thành một lớp chung là Non-completed. Sau khi chuyển đổi, bài toán trở thành phân loại 2 lớp:
+Completed
+Non-completed
+Các đặc trưng đầu vào gồm cả biến số và biến phân loại, ví dụ:
+số: propeller_count, max_carry_weight, actual_carry_weight, altitude, flight_duration, distance_flown, battery_remaining, gps_accuracy, wind_speed, overweight_flag, weight_ratio, risk_score
+phân loại: application, drone_size, drone_model, manufacturer, payload_type, payload_description, obstacles_encountered
+4. Tiền xử lý dữ liệu
+Do dữ liệu có cả biến số và biến phân loại, nhóm sử dụng pipeline tiền xử lý để bảo đảm quá trình train và test được nhất quán. Cụ thể:
+Với biến số: điền giá trị thiếu bằng median và chuẩn hóa bằng StandardScaler.
+Với biến phân loại: điền giá trị thiếu bằng mode và mã hóa bằng OneHotEncoder.
+Việc sử dụng ColumnTransformer và Pipeline giúp toàn bộ quá trình tiền xử lý và huấn luyện được đóng gói rõ ràng, tránh lỗi do xử lý thủ công rời rạc. Đồng thời, cách làm này cũng đảm bảo không có hiện tượng rò rỉ dữ liệu từ test sang train.
+5. Mô hình chính và mô hình so sánh
+Nhóm triển khai hai mô hình để so sánh hiệu quả:
+5.1. Mô hình chính: Logistic Regression
+Logistic Regression được chọn làm mô hình chính vì:
+phù hợp với bài toán phân loại nhị phân,
+dễ triển khai,
+dễ giải thích,
+cho kết quả tốt trên tập thử nghiệm hiện tại.
+Hyperparameter sử dụng:
+max_iter = 1000
+class_weight = "balanced"
+5.2. Mô hình so sánh: Random Forest
+Random Forest được chọn làm mô hình so sánh vì đây là một thuật toán ensemble phổ biến, thường cho kết quả tốt với dữ liệu bảng.
+Hyperparameter sử dụng:
+n_estimators = 200
+random_state = 42
+class_weight = "balanced"
+Cả hai mô hình đều được huấn luyện trên cùng một tập train và đánh giá trên cùng một tập test để đảm bảo tính công bằng khi so sánh.
+6. Training trên dataset UAV
+Sau khi dữ liệu được làm sạch và chia train/test theo tỷ lệ 80/20, nhóm tiến hành training mô hình trên dataset UAV. Quá trình train được thực hiện trên môi trường Jupyter Notebook web.
+Kết quả cho thấy:
+Logistic Regression học ổn định và cho kết quả rất tốt.
+Random Forest hoạt động tốt ở lớp Completed, nhưng không dự đoán được lớp thiểu số Non-completed trong một số trường hợp.
+Điều này cho thấy đặc điểm mất cân bằng lớp của dataset vẫn ảnh hưởng đến mô hình, mặc dù đã được cải thiện bằng cách gộp nhãn và dùng class_weight="balanced".
+7. Log hyperparameter
+Nhóm đã ghi lại các hyperparameter chính đã sử dụng trong mô hình để phục vụ việc báo cáo và tái lập kết quả:
+Model
+Hyperparameters
+Logistic Regression
+max_iter=1000, class_weight="balanced"
+Random Forest
+n_estimators=200, random_state=42, class_weight="balanced"
+Việc log hyperparameter giúp đảm bảo mô hình có thể được kiểm tra lại và so sánh rõ ràng trong quá trình trình bày kết quả.
+8. Prediction trên tập test
+Sau khi huấn luyện xong, cả hai mô hình được dùng để dự đoán trên tập test bằng X_test. Kết quả được đánh giá bằng:
+Accuracy
+Confusion Matrix
+Classification Report
+Kết quả cuối cùng như sau:
+Logistic Regression
+Accuracy: 1.0
+Confusion matrix: dự đoán đúng toàn bộ các mẫu trong tập test
+Precision, Recall, F1-score đều đạt 1.00
+Random Forest
+Accuracy: 0.9906
+Mô hình dự đoán tốt lớp Completed
+Tuy nhiên không phát hiện được mẫu Non-completed trong tập test
+Từ kết quả này có thể thấy Logistic Regression hoạt động tốt hơn Random Forest trong bài toán hiện tại.

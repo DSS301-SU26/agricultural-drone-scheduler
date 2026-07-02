@@ -42,6 +42,10 @@ def prepare_rows(df):
     subset["timestamp"] = subset["timestamp"].astype(str)
     if "risk_level" in subset.columns:
         subset["risk_level"] = subset["risk_level"].astype(str)
+        
+    # Replace NaN with None so it becomes valid JSON 'null'
+    subset = subset.astype(object).where(pd.notnull(subset), None)
+    
     return subset.to_dict(orient="records")
 
 def load_to_supabase(filepath, table="raw_weather_data", batch_size=500):
