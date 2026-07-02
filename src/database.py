@@ -228,10 +228,10 @@ def upload_image_to_storage(file_path: Path | str, filename: str) -> str:
 
 
 def save_decision_log(data: dict[str, Any]) -> dict[str, Any]:
-    """Insert a decision log row into flight_decisions_log."""
+    """Insert a decision log row into flight_decision_log."""
     client = get_client()
     result = (
-        client.table("flight_decisions_log")
+        client.table("flight_decision_log")
         .insert(data)
         .execute()
     )

@@ -1015,7 +1015,7 @@ def _reconcile_and_save_decisions_log(
         return slots
 
     try:
-        res = client.table("flight_decisions_log").select("*").in_("timestamp", timestamps).execute()
+        res = client.table("flight_decision_log").select("*").in_("timestamp", timestamps).execute()
         existing_rows = res.data or []
     except Exception as e:
         print(f"Failed to query existing decisions log: {e}")
@@ -1131,7 +1131,7 @@ def _reconcile_and_save_decisions_log(
 
     if to_insert_rows:
         try:
-            res_insert = client.table("flight_decisions_log").insert(to_insert_rows).execute()
+            res_insert = client.table("flight_decision_log").insert(to_insert_rows).execute()
             inserted_data = res_insert.data or []
             for i, row_data in enumerate(inserted_data):
                 if i < len(to_insert_indices):
@@ -1139,7 +1139,7 @@ def _reconcile_and_save_decisions_log(
                     slots[slot_idx]["id"] = row_data.get("id")
                     slots[slot_idx]["was_human_overridden"] = False
         except Exception as e:
-            print(f"Error bulk-inserting flight_decisions_log: {e}")
+            print(f"Error bulk-inserting flight_decision_log: {e}")
 
     return slots
 
@@ -1230,10 +1230,10 @@ def chat_ask(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         
     try:
         client = db.get_client()
-        res = client.table("flight_decisions_log").select("*").order("timestamp", desc=True).limit(100).execute()
+        res = client.table("flight_decision_log").select("*").order("timestamp", desc=True).limit(100).execute()
         rows = res.data or []
     except Exception as e:
-        print(f"Error querying flight_decisions_log for chat: {e}")
+        print(f"Error querying flight_decision_log for chat: {e}")
         rows = []
         
     q_lower = question.lower()
@@ -1395,7 +1395,7 @@ def override_decision(
         
     try:
         client = db.get_client()
-        res = client.table("flight_decisions_log").select("*").eq("id", id).execute()
+        res = client.table("flight_decision_log").select("*").eq("id", id).execute()
         records = res.data or []
     except Exception as e:
         raise HTTPException(
@@ -1429,7 +1429,7 @@ def override_decision(
     }
     
     try:
-        res_update = client.table("flight_decisions_log").update(update_data).eq("id", id).execute()
+        res_update = client.table("flight_decision_log").update(update_data).eq("id", id).execute()
         updated_records = res_update.data or []
     except Exception as e:
         raise HTTPException(
