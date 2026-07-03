@@ -1019,11 +1019,22 @@ def run_3_layer_decision_engine(
         champ_preds_idx = champion.predict(X)
         champ_probs = champion.predict_proba(X)
         
+        challenger = MODEL_PAYLOAD.get("challenger")
+        if challenger:
+            chall_preds_idx = challenger.predict(X)
+            chall_probs = challenger.predict_proba(X)
+        else:
+            chall_preds_idx = champ_preds_idx
+            chall_probs = champ_probs
+            
         LABEL_MAP = {0: "FLY", 1: "DELAY", 2: "LOCK_SPRAY", 3: "NO_FLY"}
         champ_preds = [LABEL_MAP.get(idx, "FLY") for idx in champ_preds_idx]
+        chall_preds = [LABEL_MAP.get(idx, "FLY") for idx in chall_preds_idx]
     else:
         champ_preds = ["FLY"] * len(df)
         champ_probs = [[1.0, 0.0, 0.0, 0.0]] * len(df)
+        chall_preds = champ_preds
+        chall_probs = champ_probs
         
     slots = []
     n = len(df)
@@ -1046,12 +1057,15 @@ def run_3_layer_decision_engine(
         p_champ = float(champ_probs[i][0]) # Probability of FLY class
         ai_pred = champ_preds[i]
         
+        p_chall = float(chall_probs[i][0])
+        chall_ai_pred = chall_preds[i]
+        
         # If AI says NO_FLY but rules say FLY, we downgrade
         final_decision = rule_action
         if rule_action == "FLY" and ai_pred != "FLY":
             final_decision = ai_pred
             
-        was_conflict = (rule_action != ai_pred)
+        was_conflict = (ai_pred != chall_ai_pred)
         is_safe_to_fly = (final_decision == "FLY")
         
         # 3. Flight Estimates (BRD matching)
@@ -1096,14 +1110,14 @@ def run_3_layer_decision_engine(
         slots.append({
             "row": row,
             "champion_score": p_champ,
-            "challenger_score": p_champ,
+            "challenger_score": p_chall,
             "was_conflict": was_conflict,
             "flyability_score": flyability_score,
             "is_safe_to_fly": is_safe_to_fly,
             "champion_pred": ai_pred,
             "champion_conf": p_champ,
-            "challenger_pred": ai_pred,
-            "challenger_conf": p_champ,
+            "challenger_pred": chall_ai_pred,
+            "challenger_conf": p_chall,
             "final_decision": final_decision,
             "risk_level": "LOW" if is_safe_to_fly else "HIGH",
             "xai_alert": build_recommendation_text(row, final_decision, thresholds, drone_profile, crop_stage, pesticide),
