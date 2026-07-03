@@ -14,12 +14,14 @@ from pathlib import Path
 from typing import Any
 
 import pandas as pd
-from fastapi import APIRouter, Body, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Body, HTTPException
 
 from ..decision import decide
 from ..ingestion.locations import DELTA_LOCATIONS
 from ..ingestion.soil import latest_water_level
-from ..rules.context import get_crop_stage, get_drone, get_pesticide
+from ..rules.context import get_crop_stage, get_pesticide
+from . import drone_store, plot_store
+from .decision_log import build_log_row, log_decisions, log_override
 from .deps import get_predictor, get_supabase
 
 router = APIRouter()
@@ -50,8 +52,7 @@ _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY",
 # ---------------------------------------------------------------------------
 @router.get("/api/locations")
 def locations() -> list[dict[str, Any]]:
-    return [{"id": l["name"], "name": l["name"],
-             "latitude": l["lat"], "longitude": l["lon"]} for l in DELTA_LOCATIONS]
+    return plot_store.list_plots()
 
 
 # ---------------------------------------------------------------------------
@@ -113,21 +114,22 @@ def _fetch_day(lat: float, lon: float) -> tuple[pd.DataFrame, str]:
 
 
 @router.get("/api/dashboard/slots")
-def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
+def dashboard_slots(background_tasks: BackgroundTasks,
+                    location: str = "Dong Thap", at: str | None = None,
                     farm_size_ha: float = 10.0, distance_km: float = 1.0,
                     drone_model: str = "DJI_T30", pesticide: str | None = None,
                     crop_stage: str | None = None) -> dict[str, Any]:
-    loc = _LOC_BY_NAME.get(location)
-    if loc is None:
-        raise HTTPException(404, f"Unknown location '{location}'. Co: {list(_LOC_BY_NAME)}")
+    gps = plot_store.resolve_gps(location)
+    if gps is None:
+        raise HTTPException(404, f"Unknown location/plot '{location}'.")
 
-    df, source = _fetch_day(loc["lat"], loc["lon"])
+    df, source = _fetch_day(gps[0], gps[1])
     df["ts"] = pd.to_datetime(df["timestamp"])
     day = df["ts"].dt.date.iloc[0]
     day_df = df[df["ts"].dt.date == day].sort_values("ts").reset_index(drop=True)
 
     predictor = get_predictor()
-    drone = get_drone(drone_model)
+    drone = drone_store.resolve(drone_model)
     pest = get_pesticide(pesticide)
     stage = get_crop_stage(crop_stage)
     washout_hours = pest.rain_washout_hours if pest else 0
@@ -135,6 +137,7 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
     tank = drone.tank_capacity_liters
 
     slots = []
+    log_rows: list[dict[str, Any]] = []
     for idx, row in day_df.iterrows():
         weather = row.to_dict()
         washout_prob = float(pd.to_numeric(
@@ -144,6 +147,8 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
                    hour=int(row["ts"].hour), pesticide=pest, crop_stage=stage,
                    rain_prob_washout_window_pct=washout_prob,
                    soil_water_level_cm=water).to_dict()
+
+        log_rows.append(build_log_row(location, row["ts"].isoformat(), r, weather))
 
         is_fly = r["decision"] == "FLY"
         water_l_ha = (r.get("spray_config") or {}).get("water_volume_l_ha", 0.0) if is_fly else 0.0
@@ -182,6 +187,7 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
                 "xai_alert": r["xai_explanation"],
                 "crop_impact_score": r["crop_impact_score"],
                 "spray_quality_score": r["spray_quality_score"],
+                "factors": r.get("all_factors", []),
                 "resource_regressor": {
                     "flow_rate_l_ha": water_l_ha,
                     "total_liters": total_liters,
@@ -191,6 +197,9 @@ def dashboard_slots(location: str = "Dong Thap", at: str | None = None,
                 },
             },
         })
+
+    # Ghi "hop den" ngam (best-effort, khong chan response)
+    background_tasks.add_task(log_decisions, log_rows)
 
     return {"location": location, "date": str(day), "source": source,
             "slots": slots, "decision_config": _config_state,

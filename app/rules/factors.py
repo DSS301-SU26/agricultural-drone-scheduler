@@ -16,6 +16,7 @@ from typing import Any
 from .context import CropStage, DroneProfile, PesticideSpec
 from .drone_limits import evaluate_drone_limits
 from .growth_stage import evaluate_stage_time_ban
+from .mission_factors import MissionConfig, evaluate_mission_factors
 from .pesticide import evaluate_pesticide_timing, evaluate_rain_washout
 from .thresholds import DEFAULT_THRESHOLDS, WeatherThresholds
 from .types import Decision, FactorResult, RuleEvaluation, Verdict, combine_verdicts
@@ -30,6 +31,7 @@ class RuleInput:
     pesticide: PesticideSpec | None = None
     crop_stage: CropStage | None = None
     rain_prob_washout_window_pct: float | None = None  # xs mua cao nhat trong cua so rao la
+    mission_config: MissionConfig | None = None        # pH/tro luc/dang thuoc/bec/tan la
     thresholds: WeatherThresholds = DEFAULT_THRESHOLDS
 
 
@@ -164,6 +166,10 @@ def evaluate_flight_rules(inp: RuleInput) -> RuleEvaluation:
         washout = evaluate_rain_washout(washout_prob, inp.pesticide, t)
         if washout is not None:
             factors.append(washout)
+
+    # Cac tac nhan cau hinh nhiem vu (huong gio, pH, tro luc, dang thuoc, bec, tan la)
+    factors.extend(evaluate_mission_factors(
+        inp.weather, inp.pesticide, inp.crop_stage, inp.mission_config, t))
 
     decision = combine_verdicts(factors)
     return RuleEvaluation(decision=decision, factors=factors)

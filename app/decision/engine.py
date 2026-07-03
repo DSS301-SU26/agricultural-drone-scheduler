@@ -47,6 +47,7 @@ class DecisionResult:
     was_conflict: bool
     blocking_factors: list[str] = field(default_factory=list)
     warning_factors: list[str] = field(default_factory=list)
+    all_factors: list[dict[str, Any]] = field(default_factory=list)
     flight_config: dict[str, Any] | None = None
     spray_config: dict[str, Any] | None = None
     awd: dict[str, Any] | None = None
@@ -156,6 +157,9 @@ def decide(
         was_conflict=was_conflict,
         blocking_factors=[f.factor for f in rule_eval.blocking],
         warning_factors=[f.factor for f in rule_eval.warnings],
+        all_factors=[{"factor": f.factor, "verdict": f.verdict.value,
+                      "value": f.value, "message": f.message, "is_hard": f.is_hard}
+                     for f in rule_eval.factors],
         flight_config=flight_config,
         spray_config=spray_config,
         awd=awd_dict,
