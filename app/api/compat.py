@@ -175,6 +175,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
                 "weather_description": f"code {wc}",
                 "evapotranspiration": _num(weather.get("et0_fao_evapotranspiration"), 2),
                 "soil_moisture": _num(weather.get("soil_moisture_0_to_7cm"), 2),
+                "water_level_cm": water,
             },
             "decision_engine": {
                 "champion_score": round(r["rf_score_safety"] / 100, 3),
@@ -188,6 +189,20 @@ def dashboard_slots(background_tasks: BackgroundTasks,
                 "crop_impact_score": r["crop_impact_score"],
                 "spray_quality_score": r["spray_quality_score"],
                 "factors": r.get("all_factors", []),
+                "awd_recommendation": {
+                    "action": "START_PUMP" if (r.get("awd") or {}).get("action") == "START_PUMP" else (
+                        "DELAY_PUMP" if (r.get("awd") or {}).get("action") == "HOLD_PUMP" else "KEEP_DRYING"
+                    ),
+                    "explanation": (r.get("awd") or {}).get("message", "Mực nước ngầm ở mức an toàn. Tiếp tục khô ruộng.")
+                },
+                "opt_flight_config": {
+                    "alt_min": float(stage.opt_flight_alt_min) if stage else 2.0,
+                    "alt_max": float(stage.opt_flight_alt_max) if stage else 2.5,
+                    "speed_min": float(stage.opt_flight_speed_min) if stage else 5.0,
+                    "speed_max": float(stage.opt_flight_speed_max) if stage else 6.0,
+                    "nozzle_tech": str(drone.nozzle_technology) if drone else "PRESSURE",
+                    "awd_threshold_cm": float(stage.awd_threshold_cm) if stage else -15.0,
+                },
                 "resource_regressor": {
                     "flow_rate_l_ha": water_l_ha,
                     "total_liters": total_liters,
@@ -235,6 +250,63 @@ def override(decision_id: str, payload: dict[str, Any] = Body(...)) -> dict[str,
 
     return {"status": "ok", "id": decision_id, "override_decision": old_dec,
             "was_human_overridden": was_overridden, "user_notes": payload.get("user_notes", "")}
+
+
+@router.post("/api/decision/override")
+def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    reason_str = payload.get("reason", "")
+    weather = payload.get("weather", {})
+    timestamp = weather.get("timestamp")
+    location = payload.get("location") or weather.get("location_name") or "Dong Thap"
+    drone_model = payload.get("drone_model", "DJI_T30")
+    pesticide = payload.get("pesticide")
+    crop_stage = payload.get("crop_stage")
+    record_id = payload.get("id")
+
+    decision_part = "TAKE_OFF"
+    notes_part = ""
+    if ":" in reason_str:
+        parts = reason_str.split(":", 1)
+        decision_part = parts[0].strip()
+        notes_part = parts[1].strip()
+    else:
+        decision_part = reason_str.strip()
+
+    valid_decisions = {"TAKE_OFF", "DELAY_FLIGHT", "LOCK_SPRAY", "RETURN_TO_CHARGING"}
+    if decision_part not in valid_decisions:
+        decision_part = "TAKE_OFF"
+
+    new_dec = _OLD_TO_NEW.get(decision_part, "FLY")
+
+    sb = get_supabase()
+    if sb is not None:
+        try:
+            update_data = {
+                "system_decision": new_dec,
+                "is_user_overridden": True,
+                "override_reason": notes_part,
+            }
+            if record_id:
+                sb.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
+            else:
+                sb.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
+        except Exception:
+            pass
+
+    return {
+        "status": "ok",
+        "final_decision": decision_part,
+        "was_human_overridden": True,
+        "is_safe_to_fly": (decision_part == "TAKE_OFF"),
+        "flyability_score": 1.0 if decision_part == "TAKE_OFF" else 0.0,
+        "resource_regressor": {
+            "flow_rate_l_ha": 20.0 if decision_part == "TAKE_OFF" else 0.0,
+            "total_liters": 200.0 if decision_part == "TAKE_OFF" else 0.0,
+            "sorties": 7 if decision_part == "TAKE_OFF" else 0,
+            "distance_to_field_km": 1.0,
+            "battery_cycles_needed": 9 if decision_part == "TAKE_OFF" else 0,
+        }
+    }
 
 
 # ---------------------------------------------------------------------------

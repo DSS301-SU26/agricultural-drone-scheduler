@@ -228,12 +228,95 @@ def upload_image_to_storage(file_path: Path | str, filename: str) -> str:
 
 
 def save_decision_log(data: dict[str, Any]) -> dict[str, Any]:
-    """Insert a decision log row into flight_decisions_log."""
+    """Insert a decision log row into flight_decision_log (singular or plural fallback)."""
     client = get_client()
-    result = (
-        client.table("flight_decisions_log")
-        .insert(data)
-        .execute()
-    )
-    return result.data[0] if result.data else {}
+    try:
+        result = (
+            client.table("flight_decision_log")
+            .insert(data)
+            .execute()
+        )
+        return result.data[0] if result.data else {}
+    except Exception as e:
+        print(f"Error inserting into flight_decision_log, trying plural fallback: {e}")
+        try:
+            result = (
+                client.table("flight_decisions_log")
+                .insert(data)
+                .execute()
+            )
+            return result.data[0] if result.data else {}
+        except Exception as ex:
+            print(f"Plural fallback also failed: {ex}")
+            return {}
+
+
+# ── New Schema Helper Queries ───────────────────────────────────
+
+def get_drone_profile(model_name: str) -> dict[str, Any] | None:
+    """Fetch drone profile by model name."""
+    try:
+        client = get_client()
+        result = client.table("drone_profiles").select("*").eq("model_name", model_name).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching drone profile '{model_name}': {e}")
+        return None
+
+
+def get_crop_profile(stage_code: str) -> dict[str, Any] | None:
+    """Fetch crop profile by crop stage code (e.g. SEEDLING, TILLERING, BOOTING, GRAIN_FILLING)."""
+    try:
+        client = get_client()
+        result = client.table("crop_profile").select("*").eq("stage_code", stage_code).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching crop profile '{stage_code}': {e}")
+        return None
+
+
+def get_pesticide_spec(trade_name: str) -> dict[str, Any] | None:
+    """Fetch pesticide spec by trade name or active ingredient."""
+    try:
+        client = get_client()
+        # Try trade name first
+        result = client.table("pesticide_specs").select("*").eq("trade_name", trade_name).execute()
+        if result.data:
+            return result.data[0]
+        # Try active ingredient if not found
+        result = client.table("pesticide_specs").select("*").eq("active_ingredient", trade_name).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching pesticide spec '{trade_name}': {e}")
+        return None
+
+
+def get_plot_by_name(plot_name: str) -> dict[str, Any] | None:
+    """Fetch plot by plot name (location)."""
+    try:
+        client = get_client()
+        result = client.table("m_plots").select("*").eq("plot_name", plot_name).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching plot '{plot_name}': {e}")
+        return None
+
+
+def get_latest_soil_reading(plot_id: int) -> dict[str, Any] | None:
+    """Fetch the latest soil reading for a plot."""
+    try:
+        client = get_client()
+        result = (
+            client.table("soil_readings")
+            .select("*")
+            .eq("plot_id", plot_id)
+            .order("timestamp", desc=True)
+            .limit(1)
+            .execute()
+        )
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching latest soil reading for plot {plot_id}: {e}")
+        return None
+
 

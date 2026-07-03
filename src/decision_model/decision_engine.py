@@ -94,45 +94,168 @@ def infer_crop_condition(row: pd.Series) -> str:
 def calculate_dynamic_flow_rate(
     row: pd.Series,
     thresholds: DecisionThresholds = THRESHOLDS,
+    crop_stage: dict[str, Any] | None = None,
 ) -> float:
     """
-    Estimate spray/irrigation flow-rate percentage.
-    If Temp >= 36 and Humidity < 40, evapotranspiration is extreme -> requires 15 L/ha.
-    Otherwise, we scale from baseline.
+    Estimate spray/irrigation flow-rate in L/ha based on weather and crop stage.
+    If crop_stage is provided, we use its min/max flow rate.
     """
+    if crop_stage:
+        min_f = float(crop_stage.get("flow_rate_min_l_ha", 15.0))
+        max_f = float(crop_stage.get("flow_rate_max_l_ha", 25.0))
+    else:
+        min_f = 15.0
+        max_f = 25.0
+
     temp = float(row.get("temperature_2m", 0))
     humidity = float(row.get("relative_humidity_2m", 100))
     
-    if temp >= 36.0 and humidity < 40.0:
-        return 15.0  # liters/hectare (or treated as flow rate adjustment)
+    # If weather is extremely dry/hot, use maximum flow rate
+    if temp >= 35.0 and humidity < 50.0:
+        return round(max_f, 1)
     
-    condition = row.get("crop_condition") or infer_crop_condition(row)
-    flow = 100.0
+    # Scale based on humidity
+    if humidity < 60.0:
+        flow = min_f + (max_f - min_f) * 0.75
+    elif humidity > 85.0:
+        flow = min_f
+    else:
+        flow = (min_f + max_f) / 2.0
+        
+    return round(flow, 1)
 
-    if condition == "DRY_SOIL":
-        flow += 15.0
-    elif condition == "WATER_STRESS":
-        flow += 8.0
 
-    if temp >= thresholds.max_safe_temperature:
-        flow -= 12.0
-    if float(row.get("wind_speed_10m", 0)) > 15:
-        flow -= 10.0
-    if float(row.get("precipitation_probability", 0)) > thresholds.max_rain_probability:
-        flow -= 15.0
+def calculate_crop_safety_score(
+    row: pd.Series,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
+) -> float:
+    """
+    Calculate Crop Safety Score (0-100). Higher is safer (minimal negative crop impact).
+    Factors in temperature stress, UV sensitivity of bio-pesticides, cold stress and pollination bans.
+    """
+    score = 100.0
+    temp = float(row.get("temperature_2m", 0))
+    humidity = float(row.get("relative_humidity_2m", 100))
+    cloud_cover = float(row.get("cloud_cover", 0))
+    wind = float(row.get("wind_speed_10m", 0))
+    gust = float(row.get("wind_gusts_10m", 0))
+    hour = int(row.get("hour", 12))
 
-    return round(min(120.0, max(0.0, flow)), 1)
+    stage_code = crop_stage.get("stage_code") if crop_stage else "TILLERING"
+    uv_sens = pesticide.get("uv_sensitivity", False) if pesticide else False
+    mechanism = pesticide.get("action_mechanism", "SYSTEMIC") if pesticide else "SYSTEMIC"
+
+    # 1. Heat stress
+    if temp >= 35.0:
+        score -= 25.0
+    # 2. UV Degradation risk for bio-pesticides
+    if temp >= 32.0 and uv_sens and cloud_cover < 50.0:
+        score -= 30.0
+    # 3. Cold stress for systemic pesticides
+    if temp < 20.0 and mechanism == "SYSTEMIC":
+        score -= 20.0
+    # 4. Wind spray drift risk at critical stages
+    if wind >= 18.0 and stage_code in ["TILLERING", "BOOTING"]:
+        score -= 15.0
+    # 5. Lodging risk due to wind gust during grain filling
+    if gust >= 25.0 and stage_code == "GRAIN_FILLING":
+        score -= 25.0
+    # 6. Pollination hard ban hours
+    if crop_stage:
+        ban_start = crop_stage.get("hard_ban_start_hour")
+        ban_end = crop_stage.get("hard_ban_end_hour")
+        if ban_start is not None and ban_end is not None:
+            if ban_start <= hour <= ban_end:
+                score = 0.0
+
+    return max(0.0, min(100.0, score))
+
+
+def calculate_spray_quality_score(
+    row: pd.Series,
+    pesticide: dict[str, Any] | None = None,
+    flow_rate_l_ha: float = 15.0,
+) -> float:
+    """
+    Calculate Spray Quality Score (0-100). Higher is better.
+    Factors in wind drift, droplet evaporation under heat/dry, rain washout and formulation issues.
+    """
+    score = 100.0
+    temp = float(row.get("temperature_2m", 0))
+    humidity = float(row.get("relative_humidity_2m", 100))
+    wind = float(row.get("wind_speed_10m", 0))
+    rain = float(row.get("precipitation", 0))
+    rain_prob = float(row.get("precipitation_probability", 0))
+
+    mechanism = pesticide.get("action_mechanism", "SYSTEMIC") if pesticide else "SYSTEMIC"
+    formulation = pesticide.get("common_formulation", "EC") if pesticide else "EC"
+    washout_hours = pesticide.get("rain_washout_hours", 2) if pesticide else 2
+
+    # 1. Rain Washout Risk (Contact pesticides are heavily washed out)
+    if (rain > 0.0 or rain_prob >= 50.0) and mechanism == "CONTACT":
+        score -= 50.0
+        if rain >= 2.0:
+            score -= 30.0
+
+    # 2. Droplet Evaporation Risk (High Temp & Low Humidity)
+    if temp >= 35.0 and humidity < 55.0:
+        score -= 30.0
+
+    # 3. Dilution risk by excessive dew/high humidity
+    if humidity > 90.0:
+        score -= 15.0
+
+    # 4. Wind Drift Risk
+    if wind >= 15.0:
+        score -= 20.0
+        if wind >= 25.0:
+            score -= 20.0
+
+    # 5. Low flow rate risk for WP/SC formulations (clogging)
+    if formulation in ["WP", "SC"] and flow_rate_l_ha < 15.0:
+        score -= 15.0
+
+    return max(0.0, min(100.0, score))
+
+
+def get_awd_recommendation(
+    current_water_level: float,
+    awd_threshold: float,
+    future_precipitation_24h: float,
+) -> dict[str, Any]:
+    """Calculate AWD Irrigation Recommendation based on water level and forecast rain."""
+    if current_water_level > awd_threshold:
+        return {
+            "action": "KEEP_DRYING",
+            "explanation": f"Mực nước ngầm ({current_water_level:.1f} cm) đang ở mức an toàn (trên ngưỡng {awd_threshold:.1f} cm). Tiếp tục phơi ruộng tiết kiệm nước."
+        }
+    
+    if future_precipitation_24h >= 20.0:
+        return {
+            "action": "DELAY_PUMP",
+            "explanation": f"Nước đã tụt xuống {current_water_level:.1f} cm (dưới ngưỡng {awd_threshold:.1f} cm), nhưng dự báo có mưa lớn ({future_precipitation_24h:.1f} mm) trong 24h tới. Hoãn bơm nước để tận dụng nước mưa."
+        }
+    else:
+        return {
+            "action": "START_PUMP",
+            "explanation": f"Nước đã tụt xuống {current_water_level:.1f} cm (dưới ngưỡng {awd_threshold:.1f} cm) và trời ít mưa ({future_precipitation_24h:.1f} mm). Cần khởi động trạm bơm ngay."
+        }
 
 
 def calculate_flyability_score(
     row: pd.Series,
     thresholds: DecisionThresholds = THRESHOLDS,
     unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+    drone_profile: dict[str, Any] | None = None,
 ) -> float:
-    """Score the same safety conditions used by the decision policy."""
+    """Score the safety conditions, factored dynamically by drone limits if available."""
+    max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
+
     checks = {
-        "wind": float(row.get("wind_speed_10m", 0)) <= thresholds.max_wind_speed,
-        "gust": float(row.get("wind_gusts_10m", 0)) <= thresholds.max_wind_gust,
+        "wind": float(row.get("wind_speed_10m", 0)) <= max_w,
+        "gust": float(row.get("wind_gusts_10m", 0)) <= max_g,
         "rain": float(row.get("precipitation", 0)) <= thresholds.max_rain_hourly,
         "rain_prob": float(row.get("precipitation_probability", 0)) <= thresholds.max_rain_probability,
         "cloud": float(row.get("cloud_cover", 0)) <= thresholds.max_cloud_cover,
@@ -148,14 +271,16 @@ def derive_risk_level(
     action: str | None = None,
     thresholds: DecisionThresholds = THRESHOLDS,
     unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
 ) -> str:
-    action = action or str(row.get("decision_action", derive_decision_action(row, thresholds, unsafe_weather_codes)))
+    action = action or str(row.get("decision_action", derive_decision_action(row, thresholds, unsafe_weather_codes, drone_profile, crop_stage)))
     if action in {"LOCK_SPRAY", "RETURN_TO_CHARGING"}:
         return "HIGH"
     if action == "DELAY_FLIGHT":
         return "MEDIUM"
 
-    score = float(row.get("flyability_score", calculate_flyability_score(row, thresholds, unsafe_weather_codes)))
+    score = float(row.get("flyability_score", calculate_flyability_score(row, thresholds, unsafe_weather_codes, drone_profile)))
     if score < 0.4:
         return "HIGH"
     if score < 0.7:
@@ -167,6 +292,8 @@ def derive_decision_action(
     row: pd.Series,
     thresholds: DecisionThresholds = THRESHOLDS,
     unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
 ) -> str:
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
@@ -174,14 +301,31 @@ def derive_decision_action(
     rain_prob = float(row.get("precipitation_probability", 0))
     weather_code = int(row.get("weather_code", 0))
     temp = float(row.get("temperature_2m", 0))
+    hour = int(row.get("hour", 12))
 
-    # Lớp 1 - Safety Rules (Water Resistance, Dynamic Wind Gust)
+    max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
+
+    # 1. Hard Ban Hours (Pollination time)
+    if crop_stage:
+        ban_start = crop_stage.get("hard_ban_start_hour")
+        ban_end = crop_stage.get("hard_ban_end_hour")
+        if ban_start is not None and ban_end is not None:
+            if ban_start <= hour <= ban_end:
+                return "LOCK_SPRAY"
+
+    # 2. Hard limits: Rain or dangerous weather
     if rain > thresholds.max_rain_hourly or rain_prob > thresholds.max_rain_probability or weather_code in unsafe_weather_codes:
         return "RETURN_TO_CHARGING"
-    if gust > thresholds.max_wind_gust or wind > thresholds.max_wind_speed:
+    
+    # 3. Wind resistance exceedance
+    if gust > max_g or wind > max_w:
         return "LOCK_SPRAY"
+        
+    # 4. Moderate temperature issues
     if temp > thresholds.max_safe_temperature:
         return "DELAY_FLIGHT"
+        
     return "TAKE_OFF"
 
 
@@ -189,26 +333,29 @@ def add_decision_columns(
     df: pd.DataFrame,
     thresholds: DecisionThresholds = THRESHOLDS,
     unsafe_weather_codes: set[int] | frozenset[int] = UNSAFE_WEATHER_CODES,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
 ) -> pd.DataFrame:
     enriched = df.copy()
     enriched["crop_condition"] = enriched.apply(infer_crop_condition, axis=1)
     enriched["flyability_score"] = enriched.apply(
-        lambda row: calculate_flyability_score(row, thresholds, unsafe_weather_codes),
+        lambda row: calculate_flyability_score(row, thresholds, unsafe_weather_codes, drone_profile),
         axis=1,
     )
     enriched["decision_action"] = enriched.apply(
-        lambda row: derive_decision_action(row, thresholds, unsafe_weather_codes),
+        lambda row: derive_decision_action(row, thresholds, unsafe_weather_codes, drone_profile, crop_stage),
         axis=1,
     )
     # Apply bootstrap rule
     enriched = apply_bootstrap_rule(enriched)
     
     enriched["risk_level"] = enriched.apply(
-        lambda row: derive_risk_level(row, str(row["decision_action"]), thresholds, unsafe_weather_codes),
+        lambda row: derive_risk_level(row, str(row["decision_action"]), thresholds, unsafe_weather_codes, drone_profile, crop_stage),
         axis=1,
     )
     enriched["dynamic_flow_rate_pct"] = enriched.apply(
-        lambda row: calculate_dynamic_flow_rate(row, thresholds),
+        lambda row: calculate_dynamic_flow_rate(row, thresholds, crop_stage),
         axis=1,
     )
     enriched["estimated_damage_cost_usd"] = (
@@ -240,38 +387,56 @@ def build_recommendation_text(
     row: pd.Series,
     action: str | None = None,
     thresholds: DecisionThresholds = THRESHOLDS,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
 ) -> str:
     action = action or str(row.get("decision_action", "TAKE_OFF"))
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
     rain_prob = float(row.get("precipitation_probability", 0))
     temp = float(row.get("temperature_2m", 0))
-    flow = float(row.get("dynamic_flow_rate_pct", calculate_dynamic_flow_rate(row, thresholds)))
+    flow = float(row.get("dynamic_flow_rate_pct", calculate_dynamic_flow_rate(row, thresholds, crop_stage)))
+
+    max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
 
     if action == "TAKE_OFF":
         return (
-            f"TAKE_OFF: Dieu kien bay chap nhan duoc. Gio {wind:.1f} km/h, "
-            f"gio giat {gust:.1f} km/h, xac suat mua {rain_prob:.0f}%. "
-            f"De xuat flow-rate {flow:.1f}%."
+            f"TAKE_OFF: Điều kiện bay đạt yêu cầu an toàn. Gió {wind:.1f} km/h, "
+            f"gió giật {gust:.1f} km/h, xác suất mưa {rain_prob:.0f}%. "
+            f"Đề xuất lưu lượng phun {flow:.1f} L/ha."
         )
     if action == "LOCK_SPRAY":
+        hour = int(row.get("hour", 12))
+        if crop_stage:
+            ban_start = crop_stage.get("hard_ban_start_hour")
+            ban_end = crop_stage.get("hard_ban_end_hour")
+            if ban_start is not None and ban_end is not None and ban_start <= hour <= ban_end:
+                return f"LOCK_SPRAY: Khóa bay do thời gian {hour}h00 thuộc giờ thụ phấn lúa ({ban_start}h00-{ban_end}h00), tránh downwash làm rụng phấn hoa gây lép hạt."
+        
         return (
-            f"LOCK_SPRAY: Khoa lenh phun vi gio/gio giat vuot nguong an toan "
-            f"({wind:.1f}/{gust:.1f} km/h). Tranh pesticide drift va mat on dinh UAV."
+            f"LOCK_SPRAY: Khóa lệnh phun vì gió/gió giật vượt ngưỡng an toàn thiết bị "
+            f"({wind:.1f}/{gust:.1f} km/h vượt giới hạn {max_w:.1f}/{max_g:.1f} km/h). Tránh gió giạt thuốc."
         )
     if action == "RETURN_TO_CHARGING":
         return (
-            f"RETURN_TO_CHARGING: Thoi tiet mua/nguy hiem, xac suat mua {rain_prob:.0f}%. "
-            "Dua drone ve tram sac de bao ve thiet bi."
+            f"RETURN_TO_CHARGING: Thời tiết mưa hoặc nguy hiểm, xác suất mưa {rain_prob:.0f}%. "
+            "Đưa drone về trạm sạc khẩn cấp để tránh hỏng thiết bị điện tử."
         )
     return (
-        f"DELAY_FLIGHT: Tam hoan bay do nhiet do {temp:.1f}C hoac rui ro mua "
-        f"{rain_prob:.0f}%. Kiem tra lai khung gio ke tiep."
+        f"DELAY_FLIGHT: Tạm hoãn bay do nhiệt độ cao {temp:.1f}°C vượt quá giới hạn an toàn {thresholds.max_safe_temperature}°C "
+        f"hoặc khả năng mưa {rain_prob:.0f}%. Đợi khung giờ mát mẻ hơn."
     )
 
 
-def recommend_best_slot(df: pd.DataFrame, location_name: str | None = None) -> pd.Series | None:
-    candidate_df = add_decision_columns(df)
+def recommend_best_slot(
+    df: pd.DataFrame,
+    location_name: str | None = None,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
+) -> pd.Series | None:
+    candidate_df = add_decision_columns(df, thresholds=THRESHOLDS, drone_profile=drone_profile, crop_stage=crop_stage, pesticide=pesticide)
     if location_name:
         candidate_df = candidate_df[candidate_df["location_name"] == location_name]
 
@@ -287,4 +452,5 @@ def recommend_best_slot(df: pd.DataFrame, location_name: str | None = None) -> p
     ]
     ascending = [False, True, True, True]
     return safe_slots.sort_values(sort_cols, ascending=ascending).iloc[0]
+
 

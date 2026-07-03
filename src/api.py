@@ -30,6 +30,9 @@ from .decision_model.decision_engine import (
     build_recommendation_text,
     calculate_dynamic_flow_rate,
     derive_decision_action,
+    calculate_crop_safety_score,
+    calculate_spray_quality_score,
+    get_awd_recommendation,
 )
 from .run_pipeline import run_weather_pipeline
 from . import database as db
@@ -861,12 +864,109 @@ def generate_xai_explanation(row: pd.Series, thresholds: DecisionThresholds) -> 
         return "Hạn chế bay do: " + ", ".join(reasons) + "."
     return "Thời tiết hoàn hảo, không có cảnh báo an toàn nào bị vi phạm."
 
+
+def compile_decision_factors(
+    row: pd.Series,
+    thresholds: DecisionThresholds,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    factors = []
+
+    wind = float(row.get("wind_speed_10m", 0))
+    gust = float(row.get("wind_gusts_10m", 0))
+    rain = float(row.get("precipitation", 0))
+    rain_prob = float(row.get("precipitation_probability", 0))
+    temp = float(row.get("temperature_2m", 0))
+    humidity = float(row.get("relative_humidity_2m", 0))
+    visibility = float(row.get("visibility", 10000))
+    cloud_cover = float(row.get("cloud_cover", 0))
+    hour = int(row.get("hour", 12))
+
+    max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
+
+    # 1. wind_speed
+    if wind > max_w:
+        factors.append({"factor": "drone_wind_limit", "verdict": "STOP", "message": f"Tốc độ gió {wind:.1f} km/h vượt giới hạn {max_w:.1f} km/h"})
+    elif wind >= 18.0:
+        factors.append({"factor": "wind_speed", "verdict": "WARN", "message": f"Tốc độ gió ngang {wind:.1f} km/h tăng nguy cơ tán xạ thuốc"})
+    else:
+        factors.append({"factor": "wind_speed", "verdict": "ALLOW", "message": f"Gió nhẹ {wind:.1f} km/h, an toàn"})
+
+    # 2. wind_gust
+    if gust > max_g:
+        factors.append({"factor": "drone_gust_limit", "verdict": "STOP", "message": f"Gió giật {gust:.1f} km/h vượt giới hạn {max_g:.1f} km/h"})
+    elif gust >= 25.0:
+        factors.append({"factor": "wind_gust", "verdict": "WARN", "message": f"Gió giật mạnh {gust:.1f} km/h có rủi ro đổ ngã lúa"})
+    else:
+        factors.append({"factor": "wind_gust", "verdict": "ALLOW", "message": f"Gió giật {gust:.1f} km/h trong ngưỡng an toàn"})
+
+    # 3. temperature
+    if temp >= 35.0:
+        factors.append({"factor": "temperature", "verdict": "STOP", "message": f"Nhiệt độ cực đoan {temp:.1f}°C gây sốc nhiệt và bốc hơi thuốc"})
+    elif temp >= 32.0:
+        factors.append({"factor": "temperature", "verdict": "WARN", "message": f"Thời tiết nóng {temp:.1f}°C, đề xuất tăng flow rate"})
+    else:
+        factors.append({"factor": "temperature", "verdict": "ALLOW", "message": f"Nhiệt độ mát mẻ {temp:.1f}°C"})
+
+    # 4. humidity
+    if humidity < 45.0:
+        factors.append({"factor": "humidity", "verdict": "STOP", "message": f"Độ ẩm quá thấp {humidity:.1f}% gây co hạt sương"})
+    elif humidity > 90.0:
+        factors.append({"factor": "humidity", "verdict": "WARN", "message": f"Độ ẩm quá cao {humidity:.1f}% gây pha loãng thuốc trên lá"})
+    else:
+        factors.append({"factor": "humidity", "verdict": "ALLOW", "message": f"Độ ẩm {humidity:.1f}% thích hợp"})
+
+    # 5. rain
+    if rain > thresholds.max_rain_hourly:
+        factors.append({"factor": "rain", "verdict": "STOP", "message": f"Lượng mưa lớn {rain:.1f} mm/h gây rửa trôi hoàn toàn"})
+    elif rain_prob > thresholds.max_rain_probability:
+        factors.append({"factor": "rain", "verdict": "STOP", "message": f"Xác suất mưa cao {rain_prob:.0f}%"})
+    else:
+        factors.append({"factor": "rain", "verdict": "ALLOW", "message": "Không có mưa dự báo"})
+
+    # 6. visibility
+    if visibility < thresholds.min_visibility:
+        factors.append({"factor": "visibility", "verdict": "STOP", "message": f"Tầm nhìn {visibility:.0f} m dưới ngưỡng VLOS"})
+    else:
+        factors.append({"factor": "visibility", "verdict": "ALLOW", "message": f"Tầm nhìn tốt {visibility:.0f} m"})
+
+    # 7. cloud_cover
+    if cloud_cover >= 80.0:
+        factors.append({"factor": "cloud_cover", "verdict": "ALLOW", "message": f"Trời râm mát ({cloud_cover:.0f}%), tốt cho thuốc sinh học"})
+    else:
+        factors.append({"factor": "cloud_cover", "verdict": "ALLOW", "message": f"Mây che phủ {cloud_cover:.0f}%"})
+
+    # 8. Giai đoạn sinh trưởng cấm bay giờ thụ phấn
+    if crop_stage:
+        ban_start = crop_stage.get("hard_ban_start_hour")
+        ban_end = crop_stage.get("hard_ban_end_hour")
+        if ban_start is not None and ban_end is not None:
+            if ban_start <= hour <= ban_end:
+                factors.append({"factor": "stage_time_ban", "verdict": "STOP", "message": f"Giờ thụ phấn {hour}h cấm cất cánh"})
+            else:
+                factors.append({"factor": "stage_time_ban", "verdict": "ALLOW", "message": "Khung giờ thụ phấn an toàn"})
+
+    # 9. Pesticide UV timing
+    if pesticide and pesticide.get("uv_sensitivity"):
+        if temp >= 32.0 and cloud_cover < 50.0:
+            factors.append({"factor": "pesticide_uv_timing", "verdict": "STOP", "message": f"Thuốc sinh học nhạy cảm UV dưới nắng gắt"})
+        else:
+            factors.append({"factor": "pesticide_uv_timing", "verdict": "ALLOW", "message": "UV trong ngưỡng an toàn"})
+
+    return factors
 def run_3_layer_decision_engine(
     df: pd.DataFrame,
     thresholds: DecisionThresholds,
     unsafe_weather_codes: set[int] | frozenset[int],
     farm_size_ha: float = 10.0,
     distance_to_field_km: float = 1.0,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
+    current_water_level: float = -12.0,
 ) -> list[dict[str, Any]]:
     global MODEL_PAYLOAD
     if MODEL_PAYLOAD is None:
@@ -879,7 +979,6 @@ def run_3_layer_decision_engine(
         challenger = MODEL_PAYLOAD["challenger"]
         
         X = df[feature_cols].copy()
-        # predict_proba returns probability for all classes. TAKE_OFF is index 0.
         champ_probs = champion.predict_proba(X)
         chall_probs = challenger.predict_proba(X)
     else:
@@ -888,48 +987,52 @@ def run_3_layer_decision_engine(
         
     slots = []
     n = len(df)
+    
+    max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
+    tank_cap = float(drone_profile.get("tank_capacity_liters", 30)) if drone_profile else 30
+
     for i in range(n):
         row = df.iloc[i]
         
         if has_model:
-            # TAKE_OFF is index 0
             p_champ = float(champ_probs[i][0])
             p_chall = float(chall_probs[i][0])
         else:
-            # Fallback if no model loaded
             p_champ = 1.0
             p_chall = 1.0
             
-        # Consensus Builder (Layer 2)
         delta = abs(p_champ - p_chall)
         was_conflict = (delta > 0.20)
         
         if not was_conflict:
             flyability_score = (p_champ + p_chall) / 2.0
         else:
-            # If one model is highly confident (>= 90%) and the other is reasonable (>= 60%),
-            # we take the average to avoid excessively penalizing morning slots.
             if max(p_champ, p_chall) >= 0.90 and min(p_champ, p_chall) >= 0.60:
                 flyability_score = (p_champ + p_chall) / 2.0
             else:
-                # Max Prudence principle: take the lower probability
                 flyability_score = min(p_champ, p_chall)
             
-        # --- Soft Penalty Layer (Safety Constraints) ---
         wind = float(row.get("wind_speed_10m", 0))
         gust = float(row.get("wind_gusts_10m", 0))
         rain = float(row.get("precipitation", 0))
         rain_prob = float(row.get("precipitation_probability", 0))
         temp = float(row.get("temperature_2m", 0))
         weather_code = int(row.get("weather_code", 0))
+        hour = int(row.get("hour", row["timestamp_dt"].hour))
         
-        # Heavy rain or dangerous weather -> Force score to 0.0 (unsafe for UAV electronics)
-        if rain > thresholds.max_rain_hourly or rain_prob > thresholds.max_rain_probability or weather_code in unsafe_weather_codes:
+        is_pollen_ban = False
+        if crop_stage:
+            ban_start = crop_stage.get("hard_ban_start_hour")
+            ban_end = crop_stage.get("hard_ban_end_hour")
+            if ban_start is not None and ban_end is not None:
+                if ban_start <= hour <= ban_end:
+                    is_pollen_ban = True
+
+        if rain > thresholds.max_rain_hourly or rain_prob > thresholds.max_rain_probability or weather_code in unsafe_weather_codes or is_pollen_ban:
             flyability_score = 0.0
-        # High wind or gust -> Apply heavy penalty (reduce score by 90%)
-        elif wind > thresholds.max_wind_speed or gust > thresholds.max_wind_gust:
+        elif wind > max_w or gust > max_g:
             flyability_score *= 0.10
-        # High temperature -> Apply moderate penalty (reduce score by 50% to delay flight)
         elif temp > thresholds.max_safe_temperature:
             flyability_score *= 0.50
             
@@ -942,7 +1045,6 @@ def run_3_layer_decision_engine(
             "was_conflict": was_conflict,
             "flyability_score": flyability_score,
             "is_safe_to_fly": is_safe_to_fly,
-            # Backward compatibility fields for DB logging:
             "champion_pred": "TAKE_OFF" if p_champ > 0.80 else "LOCK_SPRAY",
             "champion_conf": p_champ,
             "challenger_pred": "TAKE_OFF" if p_chall > 0.80 else "LOCK_SPRAY",
@@ -950,7 +1052,6 @@ def run_3_layer_decision_engine(
             "final_decision": "TAKE_OFF" if is_safe_to_fly else "LOCK_SPRAY",
         })
         
-    # Apply bootstrap rule
     for i in range(n):
         if slots[i]["is_safe_to_fly"]:
             left_ok = (i > 0 and slots[i-1]["is_safe_to_fly"])
@@ -961,23 +1062,15 @@ def run_3_layer_decision_engine(
                 slots[i]["final_decision"] = "DELAY_FLIGHT"
                 
     TRAVEL_COST_FACTOR = 0.1
-    for s in slots:
+    for i, s in enumerate(slots):
         row = s["row"]
         is_safe = s["is_safe_to_fly"]
         
         if is_safe:
-            temp = float(row.get("temperature_2m", 0))
-            humidity = float(row.get("relative_humidity_2m", 100))
-            
-            if temp >= 36.0 and humidity < 40.0:
-                flow_rate_l_ha = 15.0
-            else:
-                flow_pct = calculate_dynamic_flow_rate(row, thresholds)
-                flow_rate_l_ha = round(flow_pct / 10.0, 2)
-                
+            flow_rate_l_ha = calculate_dynamic_flow_rate(row, thresholds, crop_stage)
             total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
             import math
-            sorties = math.ceil(total_liters / 30.0)
+            sorties = math.ceil(total_liters / tank_cap)
             battery_cycles = sorties + math.ceil(distance_to_field_km * 2 * TRAVEL_COST_FACTOR)
         else:
             flow_rate_l_ha = 0.0
@@ -985,9 +1078,23 @@ def run_3_layer_decision_engine(
             sorties = 0
             battery_cycles = 0
             
+        crop_impact_score = calculate_crop_safety_score(row, crop_stage, pesticide)
+        spray_quality_score = calculate_spray_quality_score(row, pesticide, flow_rate_l_ha)
+
+        start_time = row["timestamp_dt"]
+        end_time = start_time + timedelta(hours=24)
+        future_df = df[(df["timestamp_dt"] > start_time) & (df["timestamp_dt"] <= end_time)]
+        future_precip = float(future_df["precipitation"].sum()) if not future_df.empty else 0.0
+        awd_thresh = float(crop_stage.get("awd_threshold_cm", -15.0)) if crop_stage else -15.0
+        
+        awd_rec = get_awd_recommendation(current_water_level, awd_thresh, future_precip)
+
         s["risk_level"] = "LOW" if is_safe else "HIGH"
         s["xai_alert"] = generate_xai_explanation(row, thresholds)
-        
+        s["crop_impact_score"] = crop_impact_score
+        s["spray_quality_score"] = spray_quality_score
+        s["awd_recommendation"] = awd_rec
+        s["factors"] = compile_decision_factors(row, thresholds, drone_profile, crop_stage, pesticide)
         s["resource_regressor"] = {
             "flow_rate_l_ha": flow_rate_l_ha,
             "total_liters": total_liters,
@@ -997,12 +1104,17 @@ def run_3_layer_decision_engine(
         
     return slots
 
+
 def _reconcile_and_save_decisions_log(
     slots: list[dict[str, Any]], 
     location: str, 
     farm_size_ha: float, 
     thresholds: DecisionThresholds,
     distance_to_field_km: float = 1.0,
+    drone_profile: dict[str, Any] | None = None,
+    crop_stage: dict[str, Any] | None = None,
+    pesticide: dict[str, Any] | None = None,
+    current_water_level: float = -12.0,
 ) -> list[dict[str, Any]]:
     try:
         client = db.get_client()
@@ -1014,68 +1126,63 @@ def _reconcile_and_save_decisions_log(
     if not timestamps:
         return slots
 
+    use_singular_schema = True
     try:
-        res = client.table("flight_decisions_log").select("*").in_("timestamp", timestamps).execute()
+        res = client.table("flight_decision_log").select("*").in_("slot_timestamp", timestamps).eq("location_name", location).execute()
         existing_rows = res.data or []
     except Exception as e:
-        print(f"Failed to query existing decisions log: {e}")
-        existing_rows = []
+        print(f"Failed to query flight_decision_log (singular), trying plural: {e}")
+        use_singular_schema = False
+        try:
+            res = client.table("flight_decisions_log").select("*").in_("timestamp", timestamps).execute()
+            existing_rows = res.data or []
+        except Exception as ex:
+            print(f"Plural query failed too: {ex}")
+            existing_rows = []
 
     existing_map = {}
     for r in existing_rows:
-        snapshot = r.get("weather_snapshot", {})
-        loc_name = snapshot.get("location_name")
-        if loc_name == location:
-            try:
-                db_ts = pd.to_datetime(r["timestamp"]).replace(tzinfo=None).isoformat()
+        try:
+            if use_singular_schema:
+                db_ts = pd.to_datetime(r["slot_timestamp"]).replace(tzinfo=None).isoformat()
                 existing_map[db_ts] = r
-            except Exception as e:
-                print(f"Error parsing db timestamp: {e}")
+            else:
+                snapshot = r.get("weather_snapshot", {})
+                loc_name = snapshot.get("location_name")
+                if loc_name == location:
+                    db_ts = pd.to_datetime(r["timestamp"]).replace(tzinfo=None).isoformat()
+                    existing_map[db_ts] = r
+        except Exception as e:
+            print(f"Error parsing db timestamp: {e}")
 
-    existing_map_by_ts = {}
-    for r in existing_rows:
-        snapshot = r.get("weather_snapshot", {})
-        loc_name = snapshot.get("location_name")
-        if loc_name == location:
-            try:
-                db_ts = pd.to_datetime(r["timestamp"]).replace(tzinfo=None).isoformat()
-                existing_map_by_ts[db_ts] = r
-            except Exception as e:
-                print(f"Error parsing db timestamp: {e}")
-
-    to_insert_indices = []
     to_insert_rows = []
+    to_insert_indices = []
     TRAVEL_COST_FACTOR = 0.1
+    tank_cap = float(drone_profile.get("tank_capacity_liters", 30)) if drone_profile else 30
 
     for idx, s in enumerate(slots):
         row = s["row"]
         ts_iso = pd.to_datetime(row["timestamp_dt"]).replace(tzinfo=None).isoformat()
 
-        db_row = existing_map_by_ts.get(ts_iso)
+        db_row = existing_map.get(ts_iso)
         if db_row:
-            s["id"] = db_row["id"]
-            s["was_human_overridden"] = db_row.get("was_human_overridden", False)
+            s["id"] = db_row["log_id"] if use_singular_schema else db_row["id"]
+            s["was_human_overridden"] = db_row.get("is_user_overridden" if use_singular_schema else "was_human_overridden", False)
             if s["was_human_overridden"]:
-                s["final_decision"] = db_row["final_decision"]
-                s["user_notes"] = db_row.get("weather_snapshot", {}).get("user_override_notes", "")
+                s["final_decision"] = db_row["system_decision" if use_singular_schema else "final_decision"]
+                s["user_notes"] = db_row.get("override_reason" if use_singular_schema else "weather_snapshot", "")
+                if not use_singular_schema and isinstance(s["user_notes"], dict):
+                    s["user_notes"] = s["user_notes"].get("user_override_notes", "")
                 
                 override_decision = s["final_decision"]
                 s["is_safe_to_fly"] = (override_decision == "TAKE_OFF")
                 s["flyability_score"] = 1.0 if s["is_safe_to_fly"] else 0.0
                 
                 if override_decision == "TAKE_OFF":
-                    temp = float(row.get("temperature_2m", 25.0))
-                    humidity = float(row.get("relative_humidity_2m", 70.0))
-                    
-                    if temp >= 36.0 and humidity < 40.0:
-                        flow_rate_l_ha = 15.0
-                    else:
-                        flow_pct = calculate_dynamic_flow_rate(row, thresholds)
-                        flow_rate_l_ha = round(flow_pct / 10.0, 2)
-                        
+                    flow_rate_l_ha = calculate_dynamic_flow_rate(row, thresholds, crop_stage)
                     total_liters = round(flow_rate_l_ha * farm_size_ha, 2)
                     import math
-                    sorties = math.ceil(total_liters / 30.0)
+                    sorties = math.ceil(total_liters / tank_cap)
                     battery_cycles = sorties + math.ceil(distance_to_field_km * 2 * TRAVEL_COST_FACTOR)
                     
                     s["resource_regressor"] = {
@@ -1110,33 +1217,54 @@ def _reconcile_and_save_decisions_log(
                 "evapotranspiration": float(row.get("evapotranspiration", 0)),
                 "soil_moisture_0_to_7cm": float(row.get("soil_moisture_0_to_7cm", 0)),
             }
-            to_insert_rows.append({
-                "timestamp": ts,
-                "weather_snapshot": weather_snapshot,
-                "champion_pred": s["champion_pred"],
-                "champion_conf": float(s["champion_conf"]),
-                "challenger_pred": s["challenger_pred"],
-                "challenger_conf": float(s["challenger_conf"]),
-                "final_decision": s["final_decision"],
-                "was_conflict": bool(s["was_conflict"]),
-                "was_human_overridden": False,
-                # New probabilistic columns:
-                "champion_score": float(s["champion_score"]),
-                "challenger_score": float(s["challenger_score"]),
-                "flyability_score": float(s["flyability_score"]),
-                "distance_to_field_km": float(distance_to_field_km),
-                "is_safe_to_fly": bool(s["is_safe_to_fly"]),
-            })
+            
+            if use_singular_schema:
+                to_insert_rows.append({
+                    "mission_id": None,
+                    "weather_id": None,
+                    "drone_id": drone_profile.get("drone_id") if drone_profile else None,
+                    "rf_score_safety": float(s["champion_score"]),
+                    "xgb_score_safety": float(s["challenger_score"]),
+                    "flight_safety_score": float(s["flyability_score"]),
+                    "crop_impact_score": float(s["crop_impact_score"]),
+                    "spray_quality_score": float(s["spray_quality_score"]),
+                    "system_decision": s["final_decision"],
+                    "is_user_overridden": False,
+                    "override_reason": None,
+                    "xai_explanation": s["xai_alert"],
+                    "location_name": loc,
+                    "slot_timestamp": ts,
+                    "weather_json": weather_snapshot,
+                })
+            else:
+                to_insert_rows.append({
+                    "timestamp": ts,
+                    "weather_snapshot": weather_snapshot,
+                    "champion_pred": s["champion_pred"],
+                    "champion_conf": float(s["champion_conf"]),
+                    "challenger_pred": s["challenger_pred"],
+                    "challenger_conf": float(s["challenger_conf"]),
+                    "final_decision": s["final_decision"],
+                    "was_conflict": bool(s["was_conflict"]),
+                    "was_human_overridden": False,
+                    "champion_score": float(s["champion_score"]),
+                    "challenger_score": float(s["challenger_score"]),
+                    "flyability_score": float(s["flyability_score"]),
+                    "distance_to_field_km": float(distance_to_field_km),
+                    "is_safe_to_fly": bool(s["is_safe_to_fly"]),
+                })
             to_insert_indices.append(idx)
 
     if to_insert_rows:
+        table_name = "flight_decision_log" if use_singular_schema else "flight_decisions_log"
+        id_field = "log_id" if use_singular_schema else "id"
         try:
-            res_insert = client.table("flight_decisions_log").insert(to_insert_rows).execute()
+            res_insert = client.table(table_name).insert(to_insert_rows).execute()
             inserted_data = res_insert.data or []
             for i, row_data in enumerate(inserted_data):
                 if i < len(to_insert_indices):
                     slot_idx = to_insert_indices[i]
-                    slots[slot_idx]["id"] = row_data.get("id")
+                    slots[slot_idx]["id"] = row_data.get(id_field)
                     slots[slot_idx]["was_human_overridden"] = False
         except Exception as e:
             print(f"Error bulk-inserting flight_decisions_log: {e}")
@@ -1149,6 +1277,9 @@ def get_dashboard_slots(
     at: str | None = None,
     farm_size_ha: float = 10.0,
     distance_km: float = 1.0,
+    drone_model: str | None = None,
+    pesticide: str | None = None,
+    crop_stage: str | None = None,
 ) -> dict[str, Any]:
     source_path = latest_clean_dataset()
     config = read_decision_config()
@@ -1169,11 +1300,72 @@ def get_dashboard_slots(
     selected_date = current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
     daily_df = daily_df.sort_values("timestamp_dt")
+
+    # Fetch DB configuration profiles
+    drone_prof = db.get_drone_profile(drone_model) if drone_model else None
+    if not drone_prof:
+        drone_prof = db.get_drone_profile("DJI_T30") or {
+            "max_wind_resistance_kph": 28.8,
+            "max_gust_resistance_kph": 28.8,
+            "tank_capacity_liters": 30,
+            "nozzle_technology": "PRESSURE",
+            "ingress_protection": "IP67"
+        }
     
-    slots = run_3_layer_decision_engine(daily_df, thresholds, unsafe_weather_codes, farm_size_ha, distance_km)
+    pest_spec = db.get_pesticide_spec(pesticide) if pesticide else None
+    if not pest_spec:
+        pest_spec = {
+            "trade_name": pesticide or "Tricyclazole",
+            "active_ingredient": pesticide or "Tricyclazole",
+            "action_mechanism": "SYSTEMIC" if (pesticide in ["Tricyclazole", "Hexaconazole"]) else "CONTACT",
+            "common_formulation": "SC" if pesticide == "Hexaconazole" else ("EC" if pesticide == "Abamectin" else "WP"),
+            "rain_washout_hours": 2,
+            "uv_sensitivity": True if pesticide == "Abamectin" else False
+        }
+        
+    crop_prof = db.get_crop_profile(crop_stage) if crop_stage else None
+    if not crop_prof:
+        crop_prof = {
+            "stage_code": crop_stage or "TILLERING",
+            "kc_value": 1.15 if crop_stage == "BOOTING" else (1.05 if crop_stage == "GRAIN_FILLING" else 0.9),
+            "opt_flight_alt_min": 1.5 if crop_stage == "BOOTING" else (2.5 if crop_stage in ["SEEDLING", "GRAIN_FILLING"] else 2.0),
+            "opt_flight_alt_max": 2.0 if crop_stage == "BOOTING" else (3.0 if crop_stage in ["SEEDLING", "GRAIN_FILLING"] else 2.5),
+            "opt_flight_speed_min": 4.0 if crop_stage in ["BOOTING", "GRAIN_FILLING"] else (6.0 if crop_stage == "SEEDLING" else 5.0),
+            "opt_flight_speed_max": 5.0 if crop_stage in ["BOOTING", "GRAIN_FILLING"] else (7.0 if crop_stage == "SEEDLING" else 6.0),
+            "flow_rate_min_l_ha": 25.0 if crop_stage == "BOOTING" else 15.0,
+            "flow_rate_max_l_ha": 30.0 if crop_stage == "BOOTING" else 20.0,
+            "awd_threshold_cm": -15.0,
+            "hard_ban_start_hour": 8 if crop_stage == "BOOTING" else None,
+            "hard_ban_end_hour": 11 if crop_stage == "BOOTING" else None
+        }
+
+    # Fetch Soil Readings
+    current_water_level = -12.0
+    current_soil_moisture = 65.0
+    try:
+        plot = db.get_plot_by_name(location)
+        if plot:
+            soil_reading = db.get_latest_soil_reading(plot["plot_id"])
+            if soil_reading:
+                if soil_reading.get("water_level_cm") is not None:
+                    current_water_level = float(soil_reading["water_level_cm"])
+                if soil_reading.get("soil_moisture_percentage") is not None:
+                    current_soil_moisture = float(soil_reading["soil_moisture_percentage"])
+    except Exception as e:
+        print(f"Error fetching soil readings: {e}")
+    
+    slots = run_3_layer_decision_engine(
+        daily_df, thresholds, unsafe_weather_codes, farm_size_ha, distance_km,
+        drone_profile=drone_prof, crop_stage=crop_prof, pesticide=pest_spec,
+        current_water_level=current_water_level
+    )
     
     try:
-        slots = _reconcile_and_save_decisions_log(slots, location, farm_size_ha, thresholds, distance_km)
+        slots = _reconcile_and_save_decisions_log(
+            slots, location, farm_size_ha, thresholds, distance_km,
+            drone_profile=drone_prof, crop_stage=crop_prof, pesticide=pest_spec,
+            current_water_level=current_water_level
+        )
     except Exception as e:
         print(f"Reconciliation and auto-save failed: {e}")
         
@@ -1197,7 +1389,8 @@ def get_dashboard_slots(
                 "weather_code": int(row["weather_code"]),
                 "weather_description": str(row.get("weather_description", "")),
                 "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
-                "soil_moisture": as_number(row.get("soil_moisture_0_to_7cm", 0.0), 2),
+                "soil_moisture": current_soil_moisture,
+                "water_level_cm": current_water_level,
             },
             "decision_engine": {
                 "champion_score": as_number(s["champion_score"], 2),
@@ -1206,6 +1399,21 @@ def get_dashboard_slots(
                 "flyability_score": as_number(s["flyability_score"], 3),
                 "is_safe_to_fly": s["is_safe_to_fly"],
                 "xai_alert": s["xai_alert"],
+                "crop_impact_score": as_number(s.get("crop_impact_score", 100), 2),
+                "spray_quality_score": as_number(s.get("spray_quality_score", 100), 2),
+                "awd_recommendation": s.get("awd_recommendation", {
+                    "action": "KEEP_DRYING",
+                    "explanation": "Duy trì phơi ruộng."
+                }),
+                "factors": s.get("factors", []),
+                "opt_flight_config": {
+                    "alt_min": float(crop_prof.get("opt_flight_alt_min", 2.0)),
+                    "alt_max": float(crop_prof.get("opt_flight_alt_max", 2.5)),
+                    "speed_min": float(crop_prof.get("opt_flight_speed_min", 5.0)),
+                    "speed_max": float(crop_prof.get("opt_flight_speed_max", 6.0)),
+                    "nozzle_tech": str(drone_prof.get("nozzle_technology", "PRESSURE")),
+                    "awd_threshold_cm": float(crop_prof.get("awd_threshold_cm", -15.0)),
+                },
                 "resource_regressor": {
                     "flow_rate_l_ha": s["resource_regressor"]["flow_rate_l_ha"],
                     "total_liters": s["resource_regressor"]["total_liters"],
@@ -1485,6 +1693,145 @@ def override_decision(
         "was_human_overridden": updated_record["was_human_overridden"],
         "is_safe_to_fly": updated_record.get("is_safe_to_fly", is_safe),
         "flyability_score": updated_record.get("flyability_score", 1.0 if is_safe else 0.0),
+        "resource_regressor": resource_regressor,
+    }
+
+
+@app.post("/api/decision/override")
+def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    import math
+    record_id = payload.get("id")
+    reason_str = payload.get("reason", "")
+    weather = payload.get("weather", {})
+    timestamp = weather.get("timestamp")
+    location = payload.get("location") or weather.get("location_name") or "Dong Thap"
+    drone_model = payload.get("drone_model", "DJI_T30")
+    pesticide = payload.get("pesticide", "Tricyclazole")
+    crop_stage = payload.get("crop_stage", "TILLERING")
+
+    # Split reason into decision and notes
+    decision_part = "TAKE_OFF"
+    notes_part = ""
+    if ":" in reason_str:
+        parts = reason_str.split(":", 1)
+        decision_part = parts[0].strip()
+        notes_part = parts[1].strip()
+    else:
+        decision_part = reason_str.strip()
+
+    valid_decisions = {"TAKE_OFF", "DELAY_FLIGHT", "LOCK_SPRAY", "RETURN_TO_CHARGING"}
+    if decision_part not in valid_decisions:
+        decision_part = "TAKE_OFF"
+
+    is_safe = (decision_part == "TAKE_OFF")
+
+    drone_prof = db.get_drone_profile(drone_model) if drone_model else None
+    if not drone_prof:
+        drone_prof = db.get_drone_profile("DJI_T30") or {
+            "max_wind_resistance_kph": 28.8,
+            "max_gust_resistance_kph": 28.8,
+            "tank_capacity_liters": 30,
+            "nozzle_technology": "PRESSURE",
+            "ingress_protection": "IP67"
+        }
+    
+    crop_prof = db.get_crop_profile(crop_stage) if crop_stage else None
+    if not crop_prof:
+        crop_prof = {
+            "stage_code": crop_stage or "TILLERING",
+            "flow_rate_min_l_ha": 15.0,
+            "flow_rate_max_l_ha": 25.0
+        }
+
+    if is_safe:
+        row_series = pd.Series(weather)
+        config = read_decision_config()
+        thresholds, _ = config_to_engine_args(config)
+        flow_rate_l_ha = calculate_dynamic_flow_rate(row_series, thresholds, crop_prof)
+        total_liters = round(flow_rate_l_ha * 10.0, 2)
+        tank_cap = float(drone_prof.get("tank_capacity_liters", 30))
+        sorties = math.ceil(total_liters / tank_cap)
+        battery_cycles = sorties + 2
+        resource_regressor = {
+            "flow_rate_l_ha": flow_rate_l_ha,
+            "total_liters": total_liters,
+            "distance_to_field_km": 1.0,
+            "battery_cycles_needed": battery_cycles,
+        }
+    else:
+        resource_regressor = {
+            "flow_rate_l_ha": 0.0,
+            "total_liters": 0.0,
+            "distance_to_field_km": 1.0,
+            "battery_cycles_needed": 0,
+        }
+
+    client = db.get_client()
+
+    try:
+        update_data = {
+            "system_decision": decision_part,
+            "is_user_overridden": True,
+            "override_reason": notes_part,
+        }
+        if record_id:
+            res_update = client.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
+        else:
+            res_update = client.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
+        
+        if res_update.data:
+            return {
+                "status": "ok",
+                "final_decision": decision_part,
+                "was_human_overridden": True,
+                "is_safe_to_fly": is_safe,
+                "flyability_score": 1.0 if is_safe else 0.0,
+                "resource_regressor": resource_regressor,
+            }
+    except Exception as e:
+        print(f"Failed updating flight_decision_log (singular): {e}")
+
+    try:
+        if record_id:
+            res_select = client.table("flight_decisions_log").select("*").eq("id", record_id).execute()
+        else:
+            res_select = client.table("flight_decisions_log").select("*").eq("timestamp", timestamp).execute()
+        
+        if res_select.data:
+            rec = res_select.data[0]
+            weather_snapshot = rec.get("weather_snapshot", {})
+            weather_snapshot["user_override_notes"] = notes_part
+            
+            update_data = {
+                "final_decision": decision_part,
+                "was_human_overridden": True,
+                "weather_snapshot": weather_snapshot,
+                "is_safe_to_fly": is_safe,
+                "flyability_score": 1.0 if is_safe else 0.0,
+            }
+            if record_id:
+                res_update = client.table("flight_decisions_log").update(update_data).eq("id", record_id).execute()
+            else:
+                res_update = client.table("flight_decisions_log").update(update_data).eq("timestamp", timestamp).execute()
+            
+            if res_update.data:
+                return {
+                    "status": "ok",
+                    "final_decision": decision_part,
+                    "was_human_overridden": True,
+                    "is_safe_to_fly": is_safe,
+                    "flyability_score": 1.0 if is_safe else 0.0,
+                    "resource_regressor": resource_regressor,
+                }
+    except Exception as ex:
+        print(f"Failed updating flight_decisions_log (plural): {ex}")
+
+    return {
+        "status": "ok",
+        "final_decision": decision_part,
+        "was_human_overridden": True,
+        "is_safe_to_fly": is_safe,
+        "flyability_score": 1.0 if is_safe else 0.0,
         "resource_regressor": resource_regressor,
     }
 
