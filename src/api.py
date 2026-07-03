@@ -1313,6 +1313,10 @@ def _reconcile_and_save_decisions_log(
 
     return slots
 
+@app.get("/api/drones")
+def get_drones() -> list[dict[str, Any]]:
+    return db.get_all_drones()
+
 @app.get("/api/dashboard/slots")
 def get_dashboard_slots(
     location: str = "Dong Thap",

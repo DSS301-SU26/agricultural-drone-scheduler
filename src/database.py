@@ -271,10 +271,21 @@ def get_drone_profile(model_name: str) -> dict[str, Any] | None:
     try:
         client = get_client()
         result = client.table("drone_profiles").select("*").eq("model_name", model_name).execute()
-        return result.data[0] if result.data else None
+        if result.data:
+            return result.data[0]
     except Exception as e:
         print(f"Error fetching drone profile '{model_name}': {e}")
-        return None
+    return None
+
+def get_all_drones() -> list[dict[str, Any]]:
+    """Fetch all drone profiles."""
+    try:
+        client = get_client()
+        result = client.table("drone_profiles").select("*").execute()
+        return result.data
+    except Exception as e:
+        print(f"Error fetching all drones: {e}")
+    return []
 
 
 def get_crop_profile(stage_code: str) -> dict[str, Any] | None:
