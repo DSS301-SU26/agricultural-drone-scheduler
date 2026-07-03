@@ -21,6 +21,7 @@ import pandas as pd
 from fastapi import Body, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
 from .decision_model.decision_engine import (
     DecisionThresholds,
@@ -1333,7 +1334,64 @@ def _reconcile_and_save_decisions_log(
 
 @app.get("/api/drones")
 def get_drones() -> list[dict[str, Any]]:
-    return db.get_all_drones()
+    drones = db.get_all_drones()
+    for d in drones:
+        if "nozzle_technology" in d:
+            d["spray_system_type"] = d.pop("nozzle_technology")
+        if "ingress_protection" in d:
+            d["ip_rating"] = d.pop("ingress_protection")
+    return drones
+
+class DronePayload(BaseModel):
+    model_name: str
+    max_wind_resistance_kph: float | None = None
+    max_gust_resistance_kph: float | None = None
+    tank_capacity_liters: float | None = None
+    spray_system_type: str | None = None
+    ip_rating: str | None = None
+    mtow_kg: float | None = None
+    notes: str | None = None
+    image_url: str | None = None
+
+@app.post("/api/drones")
+def add_drone(payload: DronePayload) -> dict[str, Any]:
+    data = payload.model_dump(exclude_unset=True)
+    if "spray_system_type" in data:
+        data["nozzle_technology"] = data.pop("spray_system_type")
+    if "ip_rating" in data:
+        data["ingress_protection"] = data.pop("ip_rating")
+    
+    res = db.add_drone(data)
+    if not res:
+        raise HTTPException(status_code=500, detail="Failed to add drone.")
+    if "nozzle_technology" in res:
+        res["spray_system_type"] = res.pop("nozzle_technology")
+    if "ingress_protection" in res:
+        res["ip_rating"] = res.pop("ingress_protection")
+    return res
+
+@app.put("/api/drones/{drone_id}")
+def update_drone(drone_id: int, payload: DronePayload) -> dict[str, Any]:
+    data = payload.model_dump(exclude_unset=True)
+    if "spray_system_type" in data:
+        data["nozzle_technology"] = data.pop("spray_system_type")
+    if "ip_rating" in data:
+        data["ingress_protection"] = data.pop("ip_rating")
+        
+    res = db.update_drone(drone_id, data)
+    if not res:
+        raise HTTPException(status_code=500, detail="Failed to update drone.")
+    if "nozzle_technology" in res:
+        res["spray_system_type"] = res.pop("nozzle_technology")
+    if "ingress_protection" in res:
+        res["ip_rating"] = res.pop("ingress_protection")
+    return res
+
+@app.delete("/api/drones/{drone_id}")
+def delete_drone(drone_id: int) -> dict[str, Any]:
+    if not db.delete_drone(drone_id):
+        raise HTTPException(status_code=500, detail="Failed to delete drone.")
+    return {"status": "success"}
 
 @app.get("/api/dashboard/slots")
 def get_dashboard_slots(

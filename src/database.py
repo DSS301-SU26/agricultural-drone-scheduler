@@ -287,6 +287,34 @@ def get_all_drones() -> list[dict[str, Any]]:
         print(f"Error fetching all drones: {e}")
     return []
 
+def add_drone(data: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        client = get_client()
+        result = client.table("drone_profiles").insert(data).execute()
+        if result.data:
+            return result.data[0]
+    except Exception as e:
+        print(f"Error adding drone: {e}")
+    return None
+
+def update_drone(drone_id: int, data: dict[str, Any]) -> dict[str, Any] | None:
+    try:
+        client = get_client()
+        result = client.table("drone_profiles").update(data).eq("drone_id", drone_id).execute()
+        if result.data:
+            return result.data[0]
+    except Exception as e:
+        print(f"Error updating drone {drone_id}: {e}")
+    return None
+
+def delete_drone(drone_id: int) -> bool:
+    try:
+        client = get_client()
+        client.table("drone_profiles").delete().eq("drone_id", drone_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error deleting drone {drone_id}: {e}")
+    return False
 
 def get_crop_profile(stage_code: str) -> dict[str, Any] | None:
     """Fetch crop profile by crop stage code (e.g. SEEDLING, TILLERING, BOOTING, GRAIN_FILLING)."""
