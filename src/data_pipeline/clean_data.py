@@ -83,18 +83,18 @@ def run_pipeline(raw_filepath, save=True):
 
     df["flyability_score"] = df.apply(calculate_flyability_score, axis=1)
     df["decision_action"] = df.apply(derive_decision_action, axis=1)
-    df["fly_label"] = (df["decision_action"] == "TAKE_OFF").map({True:"FLY",False:"NO_FLY"})
     df["risk_level"] = df.apply(lambda row: derive_risk_level(row, row["decision_action"]), axis=1)
 
     df.drop(columns=list(conds.keys()), inplace=True)
 
-    fly_pct = (df["fly_label"]=="FLY").mean()*100
-    print(f"  FLY: {fly_pct:.1f}% | NO_FLY: {100-fly_pct:.1f}%")
+    fly_pct = (df["decision_action"]=="FLY").mean()*100
+    delay_pct = (df["decision_action"]=="DELAY").mean()*100
+    print(f"  FLY: {fly_pct:.1f}% | DELAY: {delay_pct:.1f}%")
 
     if save:
-        Path("data/clean").mkdir(parents=True, exist_ok=True)
+        Path("src/data/clean").mkdir(parents=True, exist_ok=True)
         ts = datetime.now().strftime("%Y%m%d_%H%M")
-        out = f"data/clean/weather_clean_{ts}.csv"
+        out = f"src/data/clean/weather_clean_{ts}.csv"
         df.to_csv(out, index=False, encoding="utf-8-sig")
         print(f"  Saved: {out}")
 

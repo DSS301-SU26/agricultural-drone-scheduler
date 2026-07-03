@@ -1,16 +1,16 @@
 {
   "dataset_scope": "training_snapshot_not_live_forecast",
   "dataset_time_range": {
-    "min_timestamp": "2020-12-31 06:00:00",
+    "min_timestamp": "2020-01-01 06:00:00",
     "max_timestamp": "2026-06-08 17:00:00"
   },
   "strategy": "GroupShuffleSplit grouped by timestamp",
-  "input_rows": 154644,
-  "model_rows_after_dedup": 154644,
+  "input_rows": 185304,
+  "model_rows_after_dedup": 185304,
   "duplicate_location_timestamp_rows_removed": 0,
-  "unique_timestamps": 22092,
-  "train_rows": 115983,
-  "test_rows": 38661,
-  "train_unique_timestamps": 16569,
-  "test_unique_timestamps": 5523
+  "unique_timestamps": 26472,
+  "train_rows": 138978,
+  "test_rows": 46326,
+  "train_unique_timestamps": 19854,
+  "test_unique_timestamps": 6618
 }

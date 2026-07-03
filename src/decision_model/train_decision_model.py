@@ -29,7 +29,7 @@ from xgboost import XGBClassifier
 
 from .decision_engine import (
     AGRICULTURAL_LOCATIONS,
-    WEATHER_FEATURES,
+    MODEL_FEATURES,
     RISK_WEIGHTS,
     add_decision_columns,
     build_recommendation_text,
@@ -45,10 +45,10 @@ LEGACY_BEST_SLOT_REPORT = REPORT_DIR / "best_slot.json"
 TRAINING_SNAPSHOT_BEST_SLOT_REPORT = REPORT_DIR / "training_snapshot_best_slot.json"
 
 LABEL_MAPPING = {
-    "TAKE_OFF": 0,
-    "DELAY_FLIGHT": 1,
+    "FLY": 0,
+    "DELAY": 1,
     "LOCK_SPRAY": 2,
-    "RETURN_TO_CHARGING": 3
+    "NO_FLY": 3
 }
 INV_LABEL_MAPPING = {v: k for k, v in LABEL_MAPPING.items()}
 
@@ -62,7 +62,7 @@ def build_dataset_time_range(df: pd.DataFrame) -> dict[str, str]:
 
 
 def build_feature_matrix(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
-    feature_cols = [col for col in WEATHER_FEATURES if col in df.columns]
+    feature_cols = [col for col in MODEL_FEATURES if col in df.columns]
     return df[feature_cols], df["decision_action"].map(LABEL_MAPPING), feature_cols
 
 
@@ -249,7 +249,7 @@ def train_models(dataset_path: Path) -> dict[str, object]:
             "flyability_score": float(training_snapshot_best_slot["flyability_score"]),
             "recommendation_text": build_recommendation_text(
                 training_snapshot_best_slot,
-                "TAKE_OFF",
+                "FLY",
             ),
         }
         TRAINING_SNAPSHOT_BEST_SLOT_REPORT.write_text(
