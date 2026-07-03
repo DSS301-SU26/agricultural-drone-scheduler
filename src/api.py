@@ -1353,17 +1353,32 @@ class DronePayload(BaseModel):
     notes: str | None = None
     image_url: str | None = None
 
-@app.post("/api/drones")
-def add_drone(payload: DronePayload) -> dict[str, Any]:
+def _prepare_drone_payload(payload: DronePayload) -> dict[str, Any]:
     data = payload.model_dump(exclude_unset=True)
+    
+    # Map FE keys to DB columns
     if "spray_system_type" in data:
         data["nozzle_technology"] = data.pop("spray_system_type")
     if "ip_rating" in data:
         data["ingress_protection"] = data.pop("ip_rating")
+        
+    # Type conversions for Supabase strict schema
+    if "tank_capacity_liters" in data and data["tank_capacity_liters"] is not None:
+        data["tank_capacity_liters"] = int(float(data["tank_capacity_liters"]))
+    if "max_wind_resistance_kph" in data and data["max_wind_resistance_kph"] is not None:
+        data["max_wind_resistance_kph"] = float(data["max_wind_resistance_kph"])
+    if "max_gust_resistance_kph" in data and data["max_gust_resistance_kph"] is not None:
+        data["max_gust_resistance_kph"] = float(data["max_gust_resistance_kph"])
+        
+    return data
+
+@app.post("/api/drones")
+def add_drone(payload: DronePayload) -> dict[str, Any]:
+    data = _prepare_drone_payload(payload)
     
     res = db.add_drone(data)
     if not res:
-        raise HTTPException(status_code=500, detail="Failed to add drone.")
+        raise HTTPException(status_code=500, detail="Failed to add drone. Check database constraints.")
     if "nozzle_technology" in res:
         res["spray_system_type"] = res.pop("nozzle_technology")
     if "ingress_protection" in res:
@@ -1372,11 +1387,7 @@ def add_drone(payload: DronePayload) -> dict[str, Any]:
 
 @app.put("/api/drones/{drone_id}")
 def update_drone(drone_id: int, payload: DronePayload) -> dict[str, Any]:
-    data = payload.model_dump(exclude_unset=True)
-    if "spray_system_type" in data:
-        data["nozzle_technology"] = data.pop("spray_system_type")
-    if "ip_rating" in data:
-        data["ingress_protection"] = data.pop("ip_rating")
+    data = _prepare_drone_payload(payload)
         
     res = db.update_drone(drone_id, data)
     if not res:
