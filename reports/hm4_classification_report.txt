@@ -1,9 +1,9 @@
               precision    recall  f1-score   support
 
-       DELAY       0.68      0.81      0.74     20705
-         FLY       0.91      0.81      0.86     34488
-      NO_FLY       0.82      0.81      0.82     10615
+       DELAY       0.66      0.79      0.72     12871
+         FLY       0.90      0.80      0.85     22610
+      NO_FLY       0.69      0.70      0.69      3243
 
-    accuracy                           0.81     65808
-   macro avg       0.80      0.81      0.80     65808
-weighted avg       0.82      0.81      0.81     65808
+    accuracy                           0.79     38724
+   macro avg       0.75      0.76      0.75     38724
+weighted avg       0.80      0.79      0.79     38724

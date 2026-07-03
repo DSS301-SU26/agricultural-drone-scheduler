@@ -127,10 +127,15 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.csv:
-        df = pd.read_csv(args.csv)
+        path = Path(args.csv).resolve()
+        df = pd.read_csv(path)
         print(f"Dung du lieu that: {args.csv} ({len(df)} dong)")
+        if "system_decision" not in df.columns:
+            from .labeling import attach_noisy_labels
+            print("Du lieu that chua co nhan. Dang gan nhan...")
+            df = attach_noisy_labels(df)
     else:
-        df = simulate(n=args.n)
+        df = simulate(n=40000)
         print(f"Dung du lieu MO PHONG: {len(df)} dong")
 
     report = train(df)
