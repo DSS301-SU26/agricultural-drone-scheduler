@@ -1374,11 +1374,14 @@ def _prepare_drone_payload(payload: DronePayload) -> dict[str, Any]:
 
 @app.post("/api/drones")
 def add_drone(payload: DronePayload) -> dict[str, Any]:
+    if not payload.model_name.strip():
+        raise HTTPException(status_code=400, detail="Tên Drone (model_name) không được để trống!")
+        
     data = _prepare_drone_payload(payload)
     
     res = db.add_drone(data)
     if not res:
-        raise HTTPException(status_code=500, detail="Failed to add drone. Check database constraints.")
+        raise HTTPException(status_code=400, detail="Lỗi khi thêm Drone. Có thể Tên Drone đã tồn tại trong hệ thống!")
     if "nozzle_technology" in res:
         res["spray_system_type"] = res.pop("nozzle_technology")
     if "ingress_protection" in res:
@@ -1387,11 +1390,14 @@ def add_drone(payload: DronePayload) -> dict[str, Any]:
 
 @app.put("/api/drones/{drone_id}")
 def update_drone(drone_id: int, payload: DronePayload) -> dict[str, Any]:
+    if not payload.model_name.strip():
+        raise HTTPException(status_code=400, detail="Tên Drone (model_name) không được để trống!")
+        
     data = _prepare_drone_payload(payload)
         
     res = db.update_drone(drone_id, data)
     if not res:
-        raise HTTPException(status_code=500, detail="Failed to update drone.")
+        raise HTTPException(status_code=400, detail="Lỗi khi cập nhật Drone. Vui lòng kiểm tra lại!")
     if "nozzle_technology" in res:
         res["spray_system_type"] = res.pop("nozzle_technology")
     if "ingress_protection" in res:
