@@ -1060,10 +1060,14 @@ def run_3_layer_decision_engine(
         p_chall = float(chall_probs[i][0])
         chall_ai_pred = chall_preds[i]
         
-        # If AI says NO_FLY but rules say FLY, we downgrade
+        # Determine the most conservative AI prediction
+        RISK_LEVELS = {"FLY": 0, "DELAY": 1, "LOCK_SPRAY": 2, "NO_FLY": 3}
+        worst_ai_pred = ai_pred if RISK_LEVELS.get(ai_pred, 0) >= RISK_LEVELS.get(chall_ai_pred, 0) else chall_ai_pred
+        
+        # If AI is more conservative than rules, we downgrade
         final_decision = rule_action
-        if rule_action == "FLY" and ai_pred != "FLY":
-            final_decision = ai_pred
+        if RISK_LEVELS.get(worst_ai_pred, 0) > RISK_LEVELS.get(rule_action, 0):
+            final_decision = worst_ai_pred
             
         was_conflict = (ai_pred != chall_ai_pred)
         is_safe_to_fly = (final_decision == "FLY")
