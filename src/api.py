@@ -33,6 +33,7 @@ from .decision_model.decision_engine import (
     calculate_crop_safety_score,
     calculate_spray_quality_score,
     get_awd_recommendation,
+    calculate_flyability_score,
 )
 from .run_pipeline import run_weather_pipeline
 from . import database as db
@@ -986,7 +987,33 @@ def run_3_layer_decision_engine(
     if has_model:
         feature_cols = MODEL_PAYLOAD["feature_columns"]
         champion = MODEL_PAYLOAD["champion"]
-        X = df[feature_cols].copy()
+        
+        df_ml = df.copy()
+        # Populate drone parameters
+        df_ml["max_wind_resistance_kph"] = float(drone_profile.get("max_wind_resistance_kph", 28.8)) if drone_profile else 28.8
+        df_ml["max_gust_resistance_kph"] = float(drone_profile.get("max_gust_resistance_kph", 35.0)) if drone_profile else 35.0
+        
+        # Populate pesticide parameters
+        df_ml["uv_sensitivity"] = float(pesticide.get("uv_sensitivity", 0.5)) if pesticide else 0.5
+        df_ml["rain_washout_hours"] = float(pesticide.get("rain_washout_hours", 2.0)) if pesticide else 2.0
+        
+        # Populate crop stage one-hot
+        stage_code = crop_stage.get("stage_code", "TILLERING") if crop_stage else "TILLERING"
+        for stg in ["SEEDLING", "TILLERING", "BOOTING", "GRAIN_FILLING"]:
+            df_ml[f"crop_stage_{stg}"] = 1 if stage_code == stg else 0
+            
+        # Also ensure timestamp hour and month exist if needed by the model
+        if "hour" in feature_cols and "hour" not in df_ml.columns:
+            df_ml["hour"] = df_ml["timestamp_dt"].dt.hour
+        if "month" in feature_cols and "month" not in df_ml.columns:
+            df_ml["month"] = df_ml["timestamp_dt"].dt.month
+            
+        # Ensure any other missing columns from feature_cols are filled with 0
+        for col in feature_cols:
+            if col not in df_ml.columns:
+                df_ml[col] = 0
+
+        X = df_ml[feature_cols].copy()
         
         # In our 4-label XGBoost, FLY is class 0, DELAY is 1, LOCK_SPRAY is 2, NO_FLY is 3
         champ_preds_idx = champion.predict(X)
@@ -1267,14 +1294,26 @@ def _reconcile_and_save_decisions_log(
                 })
 
     if to_insert_rows:
+        import math
+        def clean_nans(obj):
+            if isinstance(obj, dict):
+                return {k: clean_nans(v) for k, v in obj.items()}
+            elif isinstance(obj, list):
+                return [clean_nans(v) for v in obj]
+            elif isinstance(obj, float) and math.isnan(obj):
+                return None
+            return obj
+            
+        cleaned_insert_rows = clean_nans(to_insert_rows)
         try:
             table_name = "flight_decision_log" if use_singular_schema else "flight_decisions_log"
-            client.table(table_name).insert(to_insert_rows).execute()
+            client.table(table_name).insert(cleaned_insert_rows).execute()
         except Exception as e:
             print(f"Failed to insert logs: {e}")
 
     return slots
 
+@app.get("/api/dashboard/slots")
 def get_dashboard_slots(
     location: str = "Dong Thap",
     at: str | None = None,
@@ -1426,12 +1465,22 @@ def get_dashboard_slots(
             }
         })
         
-    return {
+    import math
+    def clean_nans(obj):
+        if isinstance(obj, dict):
+            return {k: clean_nans(v) for k, v in obj.items()}
+        elif isinstance(obj, list):
+            return [clean_nans(v) for v in obj]
+        elif isinstance(obj, float) and math.isnan(obj):
+            return None
+        return obj
+
+    return clean_nans({
         "location": location,
         "date": str(selected_date),
         "source": source_path.name,
         "slots": formatted_slots
-    }
+    })
 
 @app.post("/api/chat/ask")
 def chat_ask(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
