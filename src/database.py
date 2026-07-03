@@ -125,8 +125,21 @@ def save_analyzed_weather_batch(rows: list[dict[str, Any]], batch_size: int = 20
     """Upsert analyzed weather records in batches. Returns count of saved rows."""
     client = get_client()
     saved = 0
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i : i + batch_size]
+    import math
+
+    def clean_nan(val):
+        if isinstance(val, float) and math.isnan(val):
+            return None
+        return val
+
+    # Clean rows to prevent JSON NaN errors
+    cleaned_rows = [
+        {k: clean_nan(v) for k, v in row.items()}
+        for row in rows
+    ]
+
+    for i in range(0, len(cleaned_rows), batch_size):
+        batch = cleaned_rows[i : i + batch_size]
         try:
             client.table("analyzed_weather_data").upsert(
                 batch, on_conflict="location_name,timestamp"
