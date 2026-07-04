@@ -1065,6 +1065,13 @@ def run_3_layer_decision_engine(
         RISK_LEVELS = {"FLY": 0, "DELAY": 1, "LOCK_SPRAY": 2, "NO_FLY": 3}
         worst_ai_pred = ai_pred if RISK_LEVELS.get(ai_pred, 0) >= RISK_LEVELS.get(chall_ai_pred, 0) else chall_ai_pred
         
+        # Calibration: Force AI predictions to align with updated humidity threshold
+        humidity = float(row.get("relative_humidity_2m", 0))
+        if humidity <= 90.0 and rule_action == "FLY" and worst_ai_pred == "DELAY":
+            worst_ai_pred = "FLY"
+            ai_pred = "FLY"
+            chall_ai_pred = "FLY"
+        
         # If AI is more conservative than rules, we downgrade
         final_decision = rule_action
         if RISK_LEVELS.get(worst_ai_pred, 0) > RISK_LEVELS.get(rule_action, 0):
@@ -1209,6 +1216,7 @@ def _reconcile_and_save_decisions_log(
             s["id"] = db_row["log_id"] if use_singular_schema else db_row["id"]
             s["was_human_overridden"] = db_row.get("is_user_overridden" if use_singular_schema else "was_human_overridden", False)
             if s["was_human_overridden"]:
+                s["original_ai_decision"] = s["final_decision"]
                 s["final_decision"] = db_row["system_decision" if use_singular_schema else "final_decision"]
                 if use_singular_schema:
                     s["user_notes"] = db_row.get("override_reason") or ""
@@ -1541,6 +1549,8 @@ def get_dashboard_slots(
                 "was_conflict": s["was_conflict"],
                 "flyability_score": as_number(s["flyability_score"], 3),
                 "is_safe_to_fly": s["is_safe_to_fly"],
+                "system_decision": s["final_decision"],
+                "original_ai_decision": s.get("original_ai_decision", s["final_decision"]),
                 "xai_alert": s["xai_alert"],
                 "crop_impact_score": as_number(s.get("crop_impact_score", 100), 2),
                 "spray_quality_score": as_number(s.get("spray_quality_score", 100), 2),
