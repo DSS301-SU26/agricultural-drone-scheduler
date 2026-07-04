@@ -274,7 +274,13 @@ def calculate_flyability_score(
         "weather": int(row.get("weather_code", 0)) not in unsafe_weather_codes,
         "temperature": float(row.get("temperature_2m", 0)) <= thresholds.max_safe_temperature,
     }
-    return round(sum(float(checks[name]) * weight for name, weight in SCORE_WEIGHTS.items()), 4)
+    base_score = sum(float(checks[name]) * weight for name, weight in SCORE_WEIGHTS.items())
+    
+    # Critical failure cap: If severe conditions exist, cap the max possible score to 40%
+    if not checks["wind"] or not checks["gust"] or not checks["rain"] or not checks["rain_prob"] or not checks["weather"]:
+        base_score = min(base_score, 0.40)
+        
+    return round(base_score, 4)
 
 
 def derive_risk_level(
