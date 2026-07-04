@@ -1557,12 +1557,7 @@ def get_dashboard_slots(
                     "nozzle_tech": str(drone_prof.get("nozzle_technology", "PRESSURE")),
                     "awd_threshold_cm": float(crop_prof.get("awd_threshold_cm", -15.0)),
                 },
-                "resource_regressor": {
-                    "flow_rate_l_ha": s["resource_regressor"]["flow_rate_l_ha"],
-                    "total_liters": s["resource_regressor"]["total_liters"],
-                    "distance_to_field_km": distance_km,
-                    "battery_cycles_needed": s["resource_regressor"]["battery_cycles"],
-                }
+                "resource_regressor": s.get("resource_regressor", {})
             }
         })
         
