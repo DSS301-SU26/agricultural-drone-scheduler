@@ -1918,8 +1918,10 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     client = db.get_client()
 
     try:
+        _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY", "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY"}
+        mapped_decision = _OLD_TO_NEW.get(decision_part, "FLY")
         update_data = {
-            "system_decision": decision_part,
+            "system_decision": mapped_decision,
             "is_user_overridden": True,
             "override_reason": notes_part,
         }
