@@ -107,7 +107,8 @@ def log_override(result: dict[str, Any], weather: dict[str, Any],
     if sb is None:
         return
     try:
-        sb.table("flight_decision_log").insert(row).execute()
+        sb.table("flight_decision_log").upsert(
+            row, on_conflict="location_name,slot_timestamp").execute()
     except Exception:
         pass
 
