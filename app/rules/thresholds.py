@@ -22,9 +22,9 @@ class WeatherThresholds:
 
     # --- Do am tuong doi (%) ---
     rh_allow_min: float = 55.0
-    rh_allow_max: float = 85.0
+    rh_allow_max: float = 90.0
     rh_low_stop: float = 45.0            # <45 kem nhiet cao/gio -> STOP
-    rh_high_stop: float = 90.0           # >90 co suong/mua phun -> STOP
+    rh_high_stop: float = 95.0           # >95 co suong/mua phun -> STOP
 
     # --- Gio trung binh (km/h) --- (3 m/s=10.8 ; 5 m/s=18.0)
     wind_ideal_kph: float = 10.8         # <3 m/s ly tuong
