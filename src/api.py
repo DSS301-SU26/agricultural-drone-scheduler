@@ -1210,6 +1210,10 @@ def _reconcile_and_save_decisions_log(
             s["was_human_overridden"] = db_row.get("is_user_overridden" if use_singular_schema else "was_human_overridden", False)
             if s["was_human_overridden"]:
                 s["final_decision"] = db_row["system_decision" if use_singular_schema else "final_decision"]
+                if use_singular_schema:
+                    s["user_notes"] = db_row.get("override_reason") or ""
+                else:
+                    s["user_notes"] = db_row.get("weather_snapshot", {}).get("user_override_notes", "")
                 override_decision = s["final_decision"]
                 s["is_safe_to_fly"] = (override_decision == "FLY")
                 
@@ -1868,11 +1872,11 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     else:
         decision_part = reason_str.strip()
 
-    valid_decisions = {"TAKE_OFF", "DELAY_FLIGHT", "LOCK_SPRAY", "RETURN_TO_CHARGING"}
+    valid_decisions = {"TAKE_OFF", "DELAY_FLIGHT", "LOCK_SPRAY", "RETURN_TO_CHARGING", "FLY", "DELAY", "NO_FLY"}
     if decision_part not in valid_decisions:
-        decision_part = "TAKE_OFF"
+        decision_part = "FLY"
 
-    is_safe = (decision_part == "TAKE_OFF")
+    is_safe = (decision_part in {"TAKE_OFF", "FLY"})
 
     drone_prof = db.get_drone_profile(drone_model) if drone_model else None
     if not drone_prof:
@@ -1918,7 +1922,7 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     client = db.get_client()
 
     try:
-        _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY", "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY"}
+        _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY", "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY", "FLY": "FLY", "DELAY": "DELAY", "NO_FLY": "NO_FLY"}
         mapped_decision = _OLD_TO_NEW.get(decision_part, "FLY")
         update_data = {
             "system_decision": mapped_decision,

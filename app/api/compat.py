@@ -44,7 +44,8 @@ _config_state: dict[str, Any] = json.loads(json.dumps(_DEFAULT_CONFIG))
 # Anh xa quyet dinh moi -> taxonomy cu
 _NEW_TO_OLD = {"FLY": "TAKE_OFF", "DELAY": "DELAY_FLIGHT", "NO_FLY": "LOCK_SPRAY"}
 _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY",
-               "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY"}
+               "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY",
+               "FLY": "FLY", "DELAY": "DELAY", "NO_FLY": "NO_FLY"}
 
 
 # ---------------------------------------------------------------------------
