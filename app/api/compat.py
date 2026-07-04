@@ -21,7 +21,7 @@ from ..ingestion.locations import DELTA_LOCATIONS
 from ..ingestion.soil import latest_water_level
 from ..rules.context import get_crop_stage, get_pesticide
 from . import drone_store, plot_store
-from .decision_log import build_log_row, log_decisions, log_override
+from .decision_log import build_log_row, log_decisions, log_override, recent_logs
 from .deps import get_predictor, get_supabase
 
 router = APIRouter()
@@ -155,6 +155,14 @@ def dashboard_slots(background_tasks: BackgroundTasks,
 
     slots = []
     log_rows: list[dict[str, Any]] = []
+    
+    # Lay danh sach override gan day tu local log
+    overrides = recent_logs(100, location)
+    override_map = {}
+    for ov in overrides:
+        if ov.get("is_user_overridden") and ov.get("slot_timestamp"):
+            override_map[ov["slot_timestamp"]] = ov
+
     for idx, row in day_df.iterrows():
         weather = row.to_dict()
         washout_prob = float(pd.to_numeric(
@@ -166,6 +174,16 @@ def dashboard_slots(background_tasks: BackgroundTasks,
                    soil_water_level_cm=water).to_dict()
 
         log_rows.append(build_log_row(location, row["ts"].isoformat(), r, weather))
+        
+        # Apply override if exists
+        ts_iso = row["ts"].isoformat()
+        ov = override_map.get(ts_iso)
+        was_overridden = False
+        user_notes = ""
+        if ov:
+            r["decision"] = ov.get("system_decision", r["decision"])
+            was_overridden = True
+            user_notes = ov.get("override_reason", "")
 
         is_fly = r["decision"] == "FLY"
         water_l_ha = (r.get("spray_config") or {}).get("water_volume_l_ha", 0.0)
@@ -175,10 +193,10 @@ def dashboard_slots(background_tasks: BackgroundTasks,
 
         wc = int(weather.get("weather_code") or 0)
         slots.append({
-            "id": f"{location}::{row['ts'].isoformat()}",
-            "was_human_overridden": False,
-            "user_notes": "",
-            "timestamp": row["ts"].isoformat(),
+            "id": f"{location}::{ts_iso}",
+            "was_human_overridden": was_overridden,
+            "user_notes": user_notes,
+            "timestamp": ts_iso,
             "weather": {
                 "temperature": _num(weather.get("temperature_2m")),
                 "humidity": _num(weather.get("relative_humidity_2m"), 0),

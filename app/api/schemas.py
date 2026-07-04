@@ -37,6 +37,7 @@ class OverrideRequest(BaseModel):
     hour: int | None = None
     plot_id: int | None = None
     mission_id: int | None = None
+    location: str | None = None
 
 
 class SlotResponse(BaseModel):

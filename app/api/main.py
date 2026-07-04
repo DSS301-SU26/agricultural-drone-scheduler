@@ -300,30 +300,8 @@ def override_decision(req: OverrideRequest) -> dict[str, Any]:
         except ValueError as e:
             raise HTTPException(400, str(e))
 
-        _log_decision(result.to_dict(), req)
+        log_override(result.to_dict(), req.weather, req.location)
         return result.to_dict()
     except Exception as e:
         import traceback
         raise HTTPException(500, traceback.format_exc())
-
-
-def _log_decision(result: dict[str, Any], req: OverrideRequest) -> None:
-    """Ghi flight_decision_log (best-effort; khong chan API neu DB loi)."""
-    sb = get_supabase()
-    if sb is None:
-        return
-    try:
-        sb.table("flight_decision_log").insert({
-            "mission_id": req.mission_id,
-            "rf_score_safety": result["rf_score_safety"],
-            "xgb_score_safety": result["xgb_score_safety"],
-            "flight_safety_score": result["flight_safety_score"],
-            "crop_impact_score": result["crop_impact_score"],
-            "spray_quality_score": result["spray_quality_score"],
-            "system_decision": result["decision"],
-            "is_user_overridden": result["is_user_overridden"],
-            "override_reason": result["override_reason"],
-            "xai_explanation": result["xai_explanation"],
-        }).execute()
-    except Exception:
-        pass
