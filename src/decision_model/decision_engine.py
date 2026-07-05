@@ -264,21 +264,46 @@ def calculate_flyability_score(
         max_w = float(row.get("max_wind_resistance_kph", thresholds.max_wind_speed))
         max_g = float(row.get("max_gust_resistance_kph", thresholds.max_wind_gust))
 
-    checks = {
-        "wind": float(row.get("wind_speed_10m", 0)) <= max_w,
-        "gust": float(row.get("wind_gusts_10m", 0)) <= max_g,
-        "rain": float(row.get("precipitation", 0)) <= thresholds.max_rain_hourly,
-        "rain_prob": float(row.get("precipitation_probability", 0)) <= thresholds.max_rain_probability,
-        "cloud": float(row.get("cloud_cover", 0)) <= thresholds.max_cloud_cover,
-        "visibility": float(row.get("visibility", thresholds.min_visibility)) >= thresholds.min_visibility,
-        "weather": int(row.get("weather_code", 0)) not in unsafe_weather_codes,
-        "temperature": float(row.get("temperature_2m", 0)) <= thresholds.max_safe_temperature,
+    v_wind = float(row.get("wind_speed_10m", 0))
+    v_gust = float(row.get("wind_gusts_10m", 0))
+    v_rain = float(row.get("precipitation", 0))
+    v_rain_prob = float(row.get("precipitation_probability", 0))
+    v_cloud = float(row.get("cloud_cover", 0))
+    v_vis = float(row.get("visibility", thresholds.min_visibility))
+    v_weather = int(row.get("weather_code", 0))
+    v_temp = float(row.get("temperature_2m", 0))
+
+    def get_factor(val, threshold, tolerance, is_max=True):
+        if is_max:
+            if val <= threshold: return 1.0
+            if val >= threshold + tolerance: return 0.0
+            return 1.0 - ((val - threshold) / tolerance)
+        else:
+            if val >= threshold: return 1.0
+            if val <= threshold - tolerance: return 0.0
+            return 1.0 - ((threshold - val) / tolerance)
+
+    factors = {
+        "wind": get_factor(v_wind, max_w, 10.0),
+        "gust": get_factor(v_gust, max_g, 15.0),
+        "rain": get_factor(v_rain, thresholds.max_rain_hourly, 5.0),
+        "rain_prob": get_factor(v_rain_prob, thresholds.max_rain_probability, 30.0),
+        "cloud": get_factor(v_cloud, thresholds.max_cloud_cover, 40.0),
+        "visibility": get_factor(v_vis, thresholds.min_visibility, thresholds.min_visibility, is_max=False),
+        "weather": 0.0 if v_weather in unsafe_weather_codes else 1.0,
+        "temperature": get_factor(v_temp, thresholds.max_safe_temperature, 5.0),
     }
-    base_score = sum(float(checks[name]) * weight for name, weight in SCORE_WEIGHTS.items())
+
+    base_score = sum(factors[name] * weight for name, weight in SCORE_WEIGHTS.items())
     
-    # Critical failure cap: If severe conditions exist, cap the max possible score to 40%
-    if not checks["wind"] or not checks["gust"] or not checks["rain"] or not checks["rain_prob"] or not checks["weather"]:
-        base_score = min(base_score, 0.40)
+    # Critical failure multiplier: Thay vì chốt cứng 40%, nhân với hệ số suy giảm tuyến tính
+    critical_min = min(factors["wind"], factors["gust"], factors["rain"], factors["rain_prob"], factors["weather"])
+    
+    if critical_min < 1.0:
+        # Nếu critical_min = 0 (vượt giới hạn an toàn rất xa), hệ số phạt là 0.20
+        # Nếu critical_min = 0.9 (vừa chạm ngưỡng), hệ số phạt là 0.92
+        penalty_multiplier = 0.20 + 0.80 * critical_min
+        base_score = base_score * penalty_multiplier
         
     return round(base_score, 4)
 

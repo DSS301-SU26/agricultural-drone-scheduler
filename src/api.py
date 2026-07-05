@@ -1077,7 +1077,7 @@ def run_3_layer_decision_engine(
         if RISK_LEVELS.get(worst_ai_pred, 0) > RISK_LEVELS.get(rule_action, 0):
             final_decision = worst_ai_pred
             
-        was_conflict = (ai_pred != chall_ai_pred)
+        was_conflict = (ai_pred != chall_ai_pred) or (abs(p_champ - p_chall) > 0.20)
         is_safe_to_fly = (final_decision == "FLY")
         
         # 3. Flight Estimates (BRD matching)
