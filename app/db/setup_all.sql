@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS m_plots (
     map_image_2d_url   VARCHAR(255),
     current_crop_stage VARCHAR(20)
                        REFERENCES crop_profile(stage_code) ON DELETE RESTRICT,
+    current_pesticide  VARCHAR(100)
+                       REFERENCES pesticide_specs(active_ingredient) ON DELETE RESTRICT,
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
