@@ -548,8 +548,16 @@ def build_recommendation_text(
             reasons.append(f"lượng mưa {rain:.1f} mm/h quá lớn")
         if rain_prob > 90:
             reasons.append(f"xác suất mưa rất cao ({rain_prob:.0f}%)")
-        if not reasons:
-            reasons.append("điều kiện thời tiết cực đoan (mã cảnh báo nguy hiểm)")
+        
+        weather_code = int(row.get("weather_code", 0))
+        if weather_code in [95, 96, 99]:
+            reasons.append(f"có dông lốc, sấm sét nguy hiểm (mã thời tiết {weather_code})")
+        elif weather_code in [65, 67, 82, 86]:
+            reasons.append(f"mưa rất to, mưa rào mạnh (mã thời tiết {weather_code})")
+        elif weather_code in [55, 63, 66, 73, 75, 77, 81]:
+            reasons.append(f"mưa nặng hạt, thời tiết xấu (mã thời tiết {weather_code})")
+        elif not reasons:
+            reasons.append(f"điều kiện thời tiết cực đoan (mã cảnh báo {weather_code})")
 
         reason_text = ", ".join(reasons)
         return (
