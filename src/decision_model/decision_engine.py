@@ -471,10 +471,12 @@ def build_recommendation_text(
     drone_max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
     drone_max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
 
-    pest_name = pesticide.get("trade_name", pesticide.get("active_ingredient", "thuốc")) if pesticide else "thuốc"
+    pest_name = pesticide.get("active_ingredient", pesticide.get("trade_name", "thuốc")) if pesticide else "thuốc"
+    pest_trade = pesticide.get("trade_name", "") if pesticide else ""
     pest_form = pesticide.get("common_formulation", "") if pesticide else ""
     pest_washout = int(pesticide.get("rain_washout_hours", 0)) if pesticide else 0
     pest_uv = pesticide.get("uv_sensitivity", False) if pesticide else False
+    pest_label = pest_name + (f" ({pest_trade})" if pest_trade and pest_trade != pest_name else "")
 
     STAGE_NAMES = {"SEEDLING": "Mạ", "TILLERING": "Đẻ nhánh", "BOOTING": "Làm đòng-Trổ", "GRAIN_FILLING": "Chín"}
     if crop_stage:
@@ -496,8 +498,8 @@ def build_recommendation_text(
             parts.append(f"Lúa giai đoạn {stage_label}: nên bay thấp 1.5-2m để thuốc xuyên được tán lá dày.")
         elif stage_code == "TILLERING":
             parts.append(f"Lúa giai đoạn {stage_label}: tán bắt đầu khép, bay ở độ cao 2-2.5m là phù hợp.")
-        if pest_name and pest_name != "thuốc":
-            parts.append(f"Thuốc {pest_name}" + (f" (dạng {pest_form})" if pest_form else "") + f" — đề xuất lưu lượng xả {flow:.1f} L/ha.")
+        if pest_label and pest_label != "thuốc":
+            parts.append(f"Thuốc {pest_label}" + (f" (dạng {pest_form})" if pest_form else "") + f" — đề xuất lưu lượng xả {flow:.1f} L/ha.")
         else:
             parts.append(f"Đề xuất lưu lượng xả {flow:.1f} L/ha.")
         return " ".join(parts)
@@ -515,7 +517,7 @@ def build_recommendation_text(
         # Lý do 2: UV nhạy cảm
         if pest_uv and temp >= 32.0:
             return (
-                f"Khóa lệnh phun — Nhiệt độ hiện tại {temp:.1f}°C quá cao khi dùng thuốc {pest_name}"
+                f"Khóa lệnh phun — Nhiệt độ hiện tại {temp:.1f}°C quá cao khi dùng thuốc {pest_label}"
                 + (f" (dạng {pest_form})" if pest_form else "")
                 + " là loại nhạy cảm với tia UV. "
                 "Dưới nắng gắt và nhiệt độ cao, hoạt chất sẽ bị phân hủy quang hóa nhanh chóng, làm giảm hiệu lực thuốc và lãng phí chi phí. "
@@ -525,7 +527,7 @@ def build_recommendation_text(
         washout_note = ""
         if pest_washout > 0:
             washout_note = (
-                f" Thuốc {pest_name}" + (f" (dạng {pest_form})" if pest_form else "")
+                f" Thuốc {pest_label}" + (f" (dạng {pest_form})" if pest_form else "")
                 + f" cần tối thiểu {pest_washout} giờ khô ráo sau khi phun mới bám dính hiệu quả trên lá."
             )
         return (
