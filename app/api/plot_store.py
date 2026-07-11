@@ -75,7 +75,7 @@ def _ensure_loaded() -> None:
 
 def list_plots() -> list[dict[str, Any]]:
     _ensure_loaded()
-    return _default_plots() + [_custom_to_out(r) for r in _customs.values()]
+    return [_custom_to_out(r) for r in _customs.values()]
 
 
 def resolve_gps(name: str) -> tuple[float, float] | None:
