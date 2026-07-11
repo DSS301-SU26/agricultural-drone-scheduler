@@ -18,6 +18,16 @@ _next_local_id = 2000
 _loaded = False
 
 
+def _nearest_location(lat: float, lon: float) -> str:
+    """Tim tinh DBSCL gan nhat theo toa do GPS (Euclidean don gian)."""
+    best, best_dist = DELTA_LOCATIONS[0]["name"], float("inf")
+    for loc in DELTA_LOCATIONS:
+        d = (lat - loc["lat"]) ** 2 + (lon - loc["lon"]) ** 2
+        if d < best_dist:
+            best, best_dist = loc["name"], d
+    return best
+
+
 def _default_plots() -> list[dict[str, Any]]:
     return [{
         "plot_id": None,
@@ -25,18 +35,22 @@ def _default_plots() -> list[dict[str, Any]]:
         "latitude": l["lat"], "longitude": l["lon"],
         "area_hectares": None, "current_crop_stage": None,
         "current_pesticide": None,
+        "location_name": l["name"],
         "is_default": True,
     } for l in DELTA_LOCATIONS]
 
 
 def _custom_to_out(rec: dict[str, Any]) -> dict[str, Any]:
+    lat = float(rec.get("latitude", 10.0))
+    lon = float(rec.get("longitude", 105.0))
     return {
         "plot_id": rec["plot_id"],
         "id": rec["plot_name"], "name": rec["plot_name"], "plot_name": rec["plot_name"],
-        "latitude": rec["latitude"], "longitude": rec["longitude"],
+        "latitude": lat, "longitude": lon,
         "area_hectares": rec.get("area_hectares"),
         "current_crop_stage": rec.get("current_crop_stage"),
         "current_pesticide": rec.get("current_pesticide"),
+        "location_name": _nearest_location(lat, lon),
         "is_default": False,
     }
 
