@@ -24,6 +24,7 @@ def _default_plots() -> list[dict[str, Any]]:
         "id": l["name"], "name": l["name"], "plot_name": l["name"],
         "latitude": l["lat"], "longitude": l["lon"],
         "area_hectares": None, "current_crop_stage": None,
+        "current_pesticide": None,
         "is_default": True,
     } for l in DELTA_LOCATIONS]
 
@@ -35,6 +36,7 @@ def _custom_to_out(rec: dict[str, Any]) -> dict[str, Any]:
         "latitude": rec["latitude"], "longitude": rec["longitude"],
         "area_hectares": rec.get("area_hectares"),
         "current_crop_stage": rec.get("current_crop_stage"),
+        "current_pesticide": rec.get("current_pesticide"),
         "is_default": False,
     }
 
