@@ -69,21 +69,50 @@ def _ml_decision_from_safety(safety: float) -> Decision:
 
 def _build_xai(rule_eval: RuleEvaluation, safety: float, crop: float, spray: float,
                decision: Decision) -> str:
-    parts = [f"Quyet dinh: {decision.value}.",
-             f"Diem: An toan bay {safety:.0f}/100, Tac dong lua {crop:.0f}/100, "
-             f"Chat luong phun {spray:.0f}/100."]
+    DECISION_LABELS = {
+        Decision.FLY: "Cho phép cất cánh",
+        Decision.DELAY: "Tạm hoãn chuyến bay",
+        Decision.NO_FLY: "Cấm bay",
+    }
+    label = DECISION_LABELS.get(decision, decision.value)
+
+    # --- Phần 1: Tổng quan điểm ---
+    score_summary = (
+        f"Điểm đánh giá: An toàn bay {safety:.0f}/100, "
+        f"Tác động cây trồng {crop:.0f}/100, "
+        f"Chất lượng phun {spray:.0f}/100."
+    )
+
+    # --- Phần 2: Lý do chi tiết ---
     if rule_eval.hard_blocking:
-        parts.append("KHOA CUNG do: " + "; ".join(f.message for f in rule_eval.hard_blocking))
+        block_msgs = [f.message for f in rule_eval.hard_blocking]
+        reason = (
+            f"{label} — Hệ thống phát hiện vi phạm nghiêm trọng: "
+            + "; ".join(block_msgs) + ". "
+            "Đây là khóa cứng bắt buộc, không thể ghi đè để đảm bảo an toàn thiết bị và mùa vụ."
+        )
+    elif rule_eval.blocking:
+        block_msgs = [f.message for f in rule_eval.blocking]
+        warn_msgs = [f.message for f in rule_eval.warnings]
+        reason = f"{label} — Lý do: " + "; ".join(block_msgs) + "."
+        if warn_msgs:
+            reason += " Ngoài ra còn lưu ý: " + "; ".join(warn_msgs) + "."
+        if decision is not Decision.FLY:
+            reason += " → Đề xuất: Kiểm tra lại khung giờ kế tiếp trên timeline."
+    elif rule_eval.warnings:
+        warn_msgs = [f.message for f in rule_eval.warnings]
+        reason = f"{label} — Cần lưu ý: " + "; ".join(warn_msgs) + "."
+        reason += " Các chỉ số chưa đạt mức lý tưởng, hiệu quả phun có thể giảm."
     else:
-        blk = [f for f in rule_eval.blocking]
-        if blk:
-            parts.append("Yeu to phai dung: " + "; ".join(f.message for f in blk))
-        warns = rule_eval.warnings
-        if warns:
-            parts.append("Canh bao: " + "; ".join(f.message for f in warns))
-    if decision is Decision.FLY:
-        parts.append("Dieu kien dat nguong an toan - cho phep cat canh.")
-    return " ".join(parts)
+        if decision is Decision.FLY:
+            reason = (
+                f"{label} — Tất cả các chỉ số thời tiết, gió, mưa và an toàn thiết bị "
+                "đều nằm trong ngưỡng cho phép. Điều kiện thuận lợi để cất cánh."
+            )
+        else:
+            reason = f"{label} — Điểm an toàn bay ({safety:.0f}/100) chưa đạt ngưỡng tối thiểu theo mô hình AI."
+
+    return f"{reason} {score_summary}"
 
 
 def decide(

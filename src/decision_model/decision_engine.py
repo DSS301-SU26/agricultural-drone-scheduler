@@ -459,51 +459,119 @@ def build_recommendation_text(
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
     rain_prob = float(row.get("precipitation_probability", 0))
+    rain = float(row.get("precipitation", 0))
     temp = float(row.get("temperature_2m", 0))
+    humidity = float(row.get("relative_humidity_2m", 0))
+    visibility = float(row.get("visibility", 10000))
+    hour = int(row.get("hour", 12))
     flow = float(row.get("dynamic_flow_rate_pct", calculate_dynamic_flow_rate(row, thresholds, crop_stage)))
 
+    # --- Lấy thông tin ngữ cảnh ---
+    drone_name = drone_profile.get("model_name", "drone") if drone_profile else "drone"
+    drone_max_w = float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed
+    drone_max_g = float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust
+
+    pest_name = pesticide.get("trade_name", pesticide.get("active_ingredient", "thuốc")) if pesticide else "thuốc"
+    pest_form = pesticide.get("common_formulation", "") if pesticide else ""
+    pest_washout = int(pesticide.get("rain_washout_hours", 0)) if pesticide else 0
+    pest_uv = pesticide.get("uv_sensitivity", False) if pesticide else False
+
+    STAGE_NAMES = {"SEEDLING": "Mạ", "TILLERING": "Đẻ nhánh", "BOOTING": "Làm đòng-Trổ", "GRAIN_FILLING": "Chín"}
     if crop_stage:
-        stage_code = crop_stage.get("stage_code")
+        stage_code = crop_stage.get("stage_code", "")
         ban_start = crop_stage.get("hard_ban_start_hour")
         ban_end = crop_stage.get("hard_ban_end_hour")
     else:
         stage_code = str(row.get("crop_stage", ""))
         ban_start = 8 if stage_code in ["BOOTING", "GRAIN_FILLING"] else None
         ban_end = 11 if stage_code in ["BOOTING", "GRAIN_FILLING"] else None
+    stage_label = STAGE_NAMES.get(stage_code, stage_code)
 
-    stage_note = ""
-    if stage_code == "SEEDLING":
-        stage_note = " Nâng độ cao bay 2.5-3m tránh hỏng mạ."
-    elif stage_code in ["BOOTING", "GRAIN_FILLING"]:
-        stage_note = " Bay thấp 1.5-2m để xuyên tán."
-
+    # === FLY ===
     if action == "FLY":
-        return (
-            f"FLY: Điều kiện bay an toàn. Gió {wind:.1f} km/h, "
-            f"nhiệt độ {temp:.1f}C, xác suất mưa {rain_prob:.0f}%. "
-            f"Đề xuất lưu lượng xả {flow:.1f} L/ha.{stage_note}"
-        )
+        parts = [f"Điều kiện bay an toàn — Gió {wind:.1f} km/h (ngưỡng {drone_name}: {drone_max_w:.0f} km/h), nhiệt độ {temp:.1f}°C, xác suất mưa chỉ {rain_prob:.0f}%."]
+        if stage_code == "SEEDLING":
+            parts.append(f"Lúa giai đoạn {stage_label}: nên bay cao 2.5-3m và tốc độ nhanh để tránh downwash dập mạ non.")
+        elif stage_code in ["BOOTING", "GRAIN_FILLING"]:
+            parts.append(f"Lúa giai đoạn {stage_label}: nên bay thấp 1.5-2m để thuốc xuyên được tán lá dày.")
+        elif stage_code == "TILLERING":
+            parts.append(f"Lúa giai đoạn {stage_label}: tán bắt đầu khép, bay ở độ cao 2-2.5m là phù hợp.")
+        if pest_name and pest_name != "thuốc":
+            parts.append(f"Thuốc {pest_name}" + (f" (dạng {pest_form})" if pest_form else "") + f" — đề xuất lưu lượng xả {flow:.1f} L/ha.")
+        else:
+            parts.append(f"Đề xuất lưu lượng xả {flow:.1f} L/ha.")
+        return " ".join(parts)
+
+    # === LOCK_SPRAY ===
     if action == "LOCK_SPRAY":
-        hour = int(row.get("hour", 12))
+        # Lý do 1: Giờ thụ phấn
         if ban_start is not None and ban_end is not None and ban_start <= hour <= ban_end:
-            return f"LOCK_SPRAY: Khóa bay do thời gian {hour}h00 thuộc giờ thụ phấn lúa ({ban_start}h00-{ban_end}h00), tránh downwash làm rụng phấn hoa gây lép hạt."
-        
-        uv_sens = pesticide.get("uv_sensitivity", False) if pesticide else bool(row.get("uv_sensitivity", False))
-        if uv_sens and temp >= 32.0:
-            return f"LOCK_SPRAY: Nhiệt độ {temp:.1f}C quá cao, có nguy cơ bốc hơi và phân hủy quang hóa thuốc sinh học nhạy UV."
-            
-        return "LOCK_SPRAY: Rủi ro rửa trôi do dự báo có mưa trong vòng 2-4h tới, hoặc rủi ro bốc hơi thuốc."
-        
-    if action == "NO_FLY":
+            return (
+                f"Khóa lệnh phun — Khung giờ {hour}h00 nằm trong giờ thụ phấn lúa "
+                f"({ban_start}h00-{ban_end}h00, giai đoạn {stage_label}). "
+                "Cánh quạt drone tạo luồng gió downwash mạnh có thể làm rụng phấn hoa, gây lép hạt và giảm năng suất nghiêm trọng. "
+                f"→ Đề xuất: Chờ bay sau {ban_end + 1}h00 hoặc trước {ban_start}h00."
+            )
+        # Lý do 2: UV nhạy cảm
+        if pest_uv and temp >= 32.0:
+            return (
+                f"Khóa lệnh phun — Nhiệt độ hiện tại {temp:.1f}°C quá cao khi dùng thuốc {pest_name}"
+                + (f" (dạng {pest_form})" if pest_form else "")
+                + " là loại nhạy cảm với tia UV. "
+                "Dưới nắng gắt và nhiệt độ cao, hoạt chất sẽ bị phân hủy quang hóa nhanh chóng, làm giảm hiệu lực thuốc và lãng phí chi phí. "
+                "→ Đề xuất: Phun vào sáng sớm (5h-7h) hoặc chiều muộn (16h-18h) khi trời mát hơn."
+            )
+        # Lý do 3: Mưa rửa trôi
+        washout_note = ""
+        if pest_washout > 0:
+            washout_note = (
+                f" Thuốc {pest_name}" + (f" (dạng {pest_form})" if pest_form else "")
+                + f" cần tối thiểu {pest_washout} giờ khô ráo sau khi phun mới bám dính hiệu quả trên lá."
+            )
         return (
-            f"NO_FLY: Thời tiết cực đoan (Gió {wind:.1f} km/h, giật {gust:.1f} km/h hoặc mưa). "
-            "Cấm cất cánh để bảo vệ phần cứng UAV."
+            f"Khóa lệnh phun — Xác suất mưa cao ({rain_prob:.0f}%), dự báo có mưa trong vòng 2-4 giờ tới."
+            + washout_note
+            + " Phun lúc này thuốc sẽ bị rửa trôi, gây lãng phí và ô nhiễm nguồn nước."
+            + " → Đề xuất: Chờ đợi khung giờ trời tạnh ổn định trong timeline bên dưới."
         )
-        
-    delay_reason = "giới hạn tầm nhìn hoặc nhiệt độ"
+
+    # === NO_FLY ===
+    if action == "NO_FLY":
+        reasons = []
+        if wind > drone_max_w:
+            reasons.append(f"gió {wind:.1f} km/h vượt giới hạn chịu đựng của {drone_name} ({drone_max_w:.0f} km/h)")
+        if gust > drone_max_g:
+            reasons.append(f"gió giật {gust:.1f} km/h vượt ngưỡng an toàn ({drone_max_g:.0f} km/h)")
+        if rain > thresholds.max_rain_hourly:
+            reasons.append(f"lượng mưa {rain:.1f} mm/h quá lớn")
+        if rain_prob > 90:
+            reasons.append(f"xác suất mưa rất cao ({rain_prob:.0f}%)")
+        if not reasons:
+            reasons.append("điều kiện thời tiết cực đoan (mã cảnh báo nguy hiểm)")
+
+        reason_text = ", ".join(reasons)
+        return (
+            f"Cấm cất cánh — Phát hiện {reason_text}. "
+            f"Nếu cố bay trong điều kiện này, {drone_name} có nguy cơ mất kiểm soát, hư hỏng phần cứng hoặc rơi rớt. "
+            "→ Đề xuất: Tuyệt đối không bay. Theo dõi timeline để tìm khung giờ an toàn hơn."
+        )
+
+    # === DELAY ===
+    reasons = []
+    if temp > thresholds.max_safe_temperature:
+        reasons.append(f"nhiệt độ {temp:.1f}°C quá cao (ngưỡng an toàn: {thresholds.max_safe_temperature:.0f}°C), thuốc dễ bốc hơi nhanh và giảm hiệu lực")
+    if visibility < thresholds.min_visibility:
+        reasons.append(f"tầm nhìn chỉ {visibility:.0f}m (yêu cầu tối thiểu {thresholds.min_visibility:.0f}m để giữ tầm quan sát trực tiếp VLOS)")
+    if humidity < 45:
+        reasons.append(f"độ ẩm {humidity:.0f}% quá thấp, giọt phun sẽ bị co lại và bay hơi trước khi chạm lá")
+    if not reasons:
+        reasons.append("một số chỉ số thời tiết chưa đạt ngưỡng lý tưởng")
+
+    reason_text = "; ".join(reasons)
     return (
-        f"DELAY: Tạm hoãn chuyến bay do {delay_reason}. "
-        "Vui lòng kiểm tra lại khung giờ kế tiếp."
+        f"Tạm hoãn chuyến bay — Phát hiện {reason_text}. "
+        "Vẫn có thể bay nhưng hiệu quả phun thuốc sẽ giảm đáng kể. "
+        "→ Đề xuất: Kiểm tra lại khung giờ kế tiếp trên timeline."
     )
 
 
