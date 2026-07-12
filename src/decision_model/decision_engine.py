@@ -557,7 +557,7 @@ def build_recommendation_text(
         elif weather_code in [55, 63, 66, 73, 75, 77, 81]:
             reasons.append(f"mưa nặng hạt, thời tiết xấu (mã thời tiết {weather_code})")
         elif not reasons:
-            reasons.append(f"điều kiện thời tiết cực đoan (mã cảnh báo {weather_code})")
+            reasons.append("dự báo rủi ro an toàn bay từ Mô hình AI ở mức cao (Dưới ngưỡng an toàn)")
 
         reason_text = ", ".join(reasons)
         return (

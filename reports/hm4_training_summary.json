@@ -1,56 +1,56 @@
 {
-  "rows": 154644,
+  "rows": 306936,
   "class_distribution": {
-    "FLY": 90265,
-    "DELAY": 51185,
-    "NO_FLY": 13194
+    "FLY": 215880,
+    "NO_FLY": 84365,
+    "DELAY": 6691
   },
   "champion": "random_forest",
   "challenger": "xgboost",
   "metrics": {
     "random_forest": {
-      "accuracy": 0.7724,
-      "macro_f1": 0.7284,
-      "weighted_f1": 0.7767
+      "accuracy": 0.9718,
+      "macro_f1": 0.8974,
+      "weighted_f1": 0.9736
     },
     "xgboost": {
-      "accuracy": 0.7877,
-      "macro_f1": 0.7337,
-      "weighted_f1": 0.7861
+      "accuracy": 0.9778,
+      "macro_f1": 0.9217,
+      "weighted_f1": 0.9781
     }
   },
   "top_features": [
     [
       "wind_gusts_10m",
-      0.30093573774774335
-    ],
-    [
-      "wind_speed_10m",
-      0.22258060646602407
-    ],
-    [
-      "precipitation",
-      0.14025929599982678
+      0.22270583771233166
     ],
     [
       "weather_code",
-      0.1312670905326314
+      0.17545035082928545
+    ],
+    [
+      "precipitation_probability",
+      0.1740541600171442
+    ],
+    [
+      "precipitation",
+      0.15569335324594952
     ],
     [
       "gust_wind_gap",
-      0.09339858233148127
+      0.10768558601510346
     ],
     [
-      "hour",
-      0.020147933715558
+      "wind_speed_10m",
+      0.08589367443139805
+    ],
+    [
+      "et0_fao_evapotranspiration",
+      0.030484208831562068
     ],
     [
       "delta_t",
-      0.018822071736578495
-    ],
-    [
-      "vpd",
-      0.01697316693391191
+      0.014985567219204271
     ]
   ],
   "model_path": "D:\\IdeaProjects\\DSS301\\agricultural-drone-scheduler\\models\\agriflight_model.joblib"
