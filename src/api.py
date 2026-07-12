@@ -1009,6 +1009,15 @@ def run_3_layer_decision_engine(
         if "month" in feature_cols and "month" not in df_ml.columns:
             df_ml["month"] = df_ml["timestamp_dt"].dt.month
             
+        # Build derived weather features using the shared engineering module
+        from app.features.engineering import build_features
+        if "timestamp" in df_ml.columns:
+            df_ml = build_features(df_ml, ts_col="timestamp")
+        else:
+            # Fallback if timestamp is missing, though we know timestamp_dt exists
+            df_ml["timestamp"] = df_ml["timestamp_dt"]
+            df_ml = build_features(df_ml, ts_col="timestamp")
+
         # Ensure any other missing columns from feature_cols are filled with 0
         for col in feature_cols:
             if col not in df_ml.columns:
@@ -1016,7 +1025,6 @@ def run_3_layer_decision_engine(
 
         X = df_ml[feature_cols].copy()
         
-        # In our 4-label XGBoost, FLY is class 0, DELAY is 1, LOCK_SPRAY is 2, NO_FLY is 3
         champ_preds_idx = champion.predict(X)
         champ_probs = champion.predict_proba(X)
         
@@ -1028,9 +1036,12 @@ def run_3_layer_decision_engine(
             chall_preds_idx = champ_preds_idx
             chall_probs = champ_probs
             
-        LABEL_MAP = {0: "FLY", 1: "DELAY", 2: "LOCK_SPRAY", 3: "NO_FLY"}
-        champ_preds = [LABEL_MAP.get(idx, "FLY") for idx in champ_preds_idx]
-        chall_preds = [LABEL_MAP.get(idx, "FLY") for idx in chall_preds_idx]
+        label_map = {v: k for k, v in MODEL_PAYLOAD.get("label_to_idx", {}).items()}
+        if not label_map:
+            label_map = {0: "FLY", 1: "DELAY", 2: "LOCK_SPRAY", 3: "NO_FLY"}
+            
+        champ_preds = [label_map.get(idx, "FLY") for idx in champ_preds_idx]
+        chall_preds = [label_map.get(idx, "FLY") for idx in chall_preds_idx]
     else:
         champ_preds = ["FLY"] * len(df)
         champ_probs = [[1.0, 0.0, 0.0, 0.0]] * len(df)
