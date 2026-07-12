@@ -1088,6 +1088,14 @@ def run_3_layer_decision_engine(
         if RISK_LEVELS.get(worst_ai_pred, 0) > RISK_LEVELS.get(rule_action, 0):
             final_decision = worst_ai_pred
             
+            # Align flyability score with the AI's conservative decision
+            if final_decision == "NO_FLY":
+                flyability_score = min(flyability_score, 0.39)
+            elif final_decision == "DELAY":
+                flyability_score = min(flyability_score, 0.69)
+            elif final_decision == "LOCK_SPRAY":
+                flyability_score = min(flyability_score, 0.49)
+            
         was_conflict = (ai_pred != chall_ai_pred) or (abs(p_champ - p_chall) > 0.20)
         is_safe_to_fly = (final_decision == "FLY")
         
