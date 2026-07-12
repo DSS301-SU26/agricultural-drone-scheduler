@@ -304,6 +304,22 @@ def calculate_flyability_score(
         # Nếu critical_min = 0.9 (vừa chạm ngưỡng), hệ số phạt là 0.92
         penalty_multiplier = 0.20 + 0.80 * critical_min
         base_score = base_score * penalty_multiplier
+
+    # Hard cap the flyability score if physical safety thresholds are breached
+    # If any threshold is breached, the rule engine will output NO_FLY or DELAY.
+    # We must ensure the numerical score mathematically aligns with that decision.
+    is_no_fly = False
+    is_delay = False
+    
+    if v_wind > max_w or v_gust > max_g or v_rain > thresholds.max_rain_hourly or v_rain_prob > 90 or v_weather in unsafe_weather_codes:
+        is_no_fly = True
+    elif v_temp > thresholds.max_safe_temperature or v_vis < thresholds.min_visibility or v_rain_prob > thresholds.max_rain_probability:
+        is_delay = True
+        
+    if is_no_fly:
+        base_score = min(base_score, 0.39)
+    elif is_delay:
+        base_score = min(base_score, 0.69)
         
     return round(base_score, 4)
 
