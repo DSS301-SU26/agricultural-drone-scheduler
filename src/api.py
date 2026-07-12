@@ -1082,6 +1082,18 @@ def run_3_layer_decision_engine(
             worst_ai_pred = "FLY"
             ai_pred = "FLY"
             chall_ai_pred = "FLY"
+            
+        # Calibration: If AI predicts NO_FLY but physical rules say it's just LOCK_SPRAY (e.g. drizzle),
+        # we downgrade the AI to LOCK_SPRAY so it doesn't ban flight unnecessarily.
+        if worst_ai_pred == "NO_FLY" and rule_action == "LOCK_SPRAY":
+            wind = float(row.get("wind_speed_10m", 0))
+            gust = float(row.get("wind_gusts_10m", 0))
+            rain = float(row.get("precipitation", 0))
+            max_w = float(drone_profile.get("max_wind_resistance_kph", 28.8)) if drone_profile else 28.8
+            max_g = float(drone_profile.get("max_gust_resistance_kph", 35.0)) if drone_profile else 35.0
+            
+            if wind <= max_w and gust <= max_g and rain <= thresholds.max_rain_hourly:
+                worst_ai_pred = "LOCK_SPRAY"
         
         # If AI is more conservative than rules, we downgrade
         final_decision = rule_action

@@ -401,6 +401,9 @@ def derive_decision_action(
     
     if rain_prob > thresholds.max_rain_probability and rain_washout > 0:
         return "LOCK_SPRAY"
+        
+    if weather_code in [51, 53, 58, 59, 61, 62]:
+        return "LOCK_SPRAY"
 
     # 3. DELAY
     if temp > thresholds.max_safe_temperature or visibility < thresholds.min_visibility:
@@ -539,7 +542,16 @@ def build_recommendation_text(
                 "Dưới nắng gắt và nhiệt độ cao, hoạt chất sẽ bị phân hủy quang hóa nhanh chóng, làm giảm hiệu lực thuốc và lãng phí chi phí. "
                 "→ Đề xuất: Phun vào sáng sớm (5h-7h) hoặc chiều muộn (16h-18h) khi trời mát hơn."
             )
-        # Lý do 3: Mưa rửa trôi
+        # Lý do 3: Mưa phùn nhẹ (Drizzle)
+        weather_code = int(row.get("weather_code", 0))
+        if weather_code in [51, 53, 58, 59, 61, 62]:
+            return (
+                f"Khóa lệnh phun — Đang có mưa phùn hoặc mưa nhỏ (mã thời tiết {weather_code}). "
+                "Drone vẫn có thể bay an toàn, nhưng phun lúc này thuốc sẽ bị loãng hoặc rửa trôi, gây lãng phí và giảm hiệu lực. "
+                "→ Đề xuất: Theo dõi timeline bên dưới để đợi trời tạnh."
+            )
+        
+        # Lý do 4: Mưa rửa trôi (Dự báo mưa)
         washout_note = ""
         if pest_washout > 0:
             washout_note = (
