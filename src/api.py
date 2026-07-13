@@ -1428,6 +1428,17 @@ def add_drone(payload: DronePayload) -> dict[str, Any]:
     if not payload.model_name.strip():
         raise HTTPException(status_code=400, detail="Tên Drone (model_name) không được để trống!")
         
+    existing_drone = db.get_drone_profile(payload.model_name)
+    if existing_drone:
+        raise HTTPException(status_code=400, detail=f"Tên Drone '{payload.model_name}' đã tồn tại trong hệ thống!")
+
+    if (payload.max_wind_resistance_kph is not None and payload.max_wind_resistance_kph < 0) or \
+       (payload.max_gust_resistance_kph is not None and payload.max_gust_resistance_kph < 0):
+        raise HTTPException(status_code=400, detail="Ngưỡng gió không được là số âm")
+    if payload.max_wind_resistance_kph is not None and payload.max_gust_resistance_kph is not None:
+        if payload.max_gust_resistance_kph < payload.max_wind_resistance_kph:
+            raise HTTPException(status_code=400, detail="Gió giật không được nhỏ hơn sức cản gió thường")
+        
     data = _prepare_drone_payload(payload)
     
     res = db.add_drone(data)
@@ -1443,6 +1454,17 @@ def add_drone(payload: DronePayload) -> dict[str, Any]:
 def update_drone(drone_id: int, payload: DronePayload) -> dict[str, Any]:
     if not payload.model_name.strip():
         raise HTTPException(status_code=400, detail="Tên Drone (model_name) không được để trống!")
+        
+    existing_drone = db.get_drone_profile(payload.model_name)
+    if existing_drone and existing_drone.get("drone_id") != drone_id:
+        raise HTTPException(status_code=400, detail=f"Tên Drone '{payload.model_name}' đã tồn tại trong hệ thống!")
+
+    if (payload.max_wind_resistance_kph is not None and payload.max_wind_resistance_kph < 0) or \
+       (payload.max_gust_resistance_kph is not None and payload.max_gust_resistance_kph < 0):
+        raise HTTPException(status_code=400, detail="Ngưỡng gió không được là số âm")
+    if payload.max_wind_resistance_kph is not None and payload.max_gust_resistance_kph is not None:
+        if payload.max_gust_resistance_kph < payload.max_wind_resistance_kph:
+            raise HTTPException(status_code=400, detail="Gió giật không được nhỏ hơn sức cản gió thường")
         
     data = _prepare_drone_payload(payload)
         
