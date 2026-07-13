@@ -95,10 +95,10 @@ def _old_action(result_dict: dict[str, Any]) -> str:
     if dec == "NO_FLY":
         blk = set(result_dict.get("blocking_factors", []))
         if {"rain", "pesticide_rain_washout"} & blk:
-            return "RETURN_TO_CHARGING"
+            return "NO_FLY"
         if {"wind_speed", "drone_wind_limit", "drone_gust_limit", "wind_gust"} & blk:
             return "LOCK_SPRAY"
-        return "RETURN_TO_CHARGING"
+        return "NO_FLY"
     return _NEW_TO_OLD[dec]
 
 

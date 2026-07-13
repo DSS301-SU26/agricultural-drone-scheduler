@@ -1040,8 +1040,16 @@ def run_3_layer_decision_engine(
         if not label_map:
             label_map = {0: "FLY", 1: "DELAY", 2: "LOCK_SPRAY", 3: "NO_FLY"}
             
-        champ_preds = [label_map.get(idx, "FLY") for idx in champ_preds_idx]
-        chall_preds = [label_map.get(idx, "FLY") for idx in chall_preds_idx]
+        _ML_TO_UNIFIED = {
+            "TAKE_OFF": "FLY", 
+            "DELAY_FLIGHT": "DELAY", 
+            "LOCK_SPRAY": "LOCK_SPRAY", 
+            "RETURN_TO_CHARGING": "NO_FLY",
+            "FLY": "FLY", "DELAY": "DELAY", "NO_FLY": "NO_FLY"
+        }
+            
+        champ_preds = [_ML_TO_UNIFIED.get(label_map.get(idx, "FLY"), "FLY") for idx in champ_preds_idx]
+        chall_preds = [_ML_TO_UNIFIED.get(label_map.get(idx, "FLY"), "FLY") for idx in chall_preds_idx]
     else:
         champ_preds = ["FLY"] * len(df)
         champ_probs = [[1.0, 0.0, 0.0, 0.0]] * len(df)
