@@ -1453,6 +1453,33 @@ def delete_drone(drone_id: int) -> dict[str, Any]:
         raise HTTPException(status_code=500, detail="Failed to delete drone.")
     return {"status": "success"}
 
+@app.get("/api/plots")
+def list_plots() -> list[dict[str, Any]]:
+    from app.api import plot_store
+    return plot_store.list_plots()
+
+@app.post("/api/plots")
+def create_plot(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    from app.api import plot_store
+    try:
+        return plot_store.add_plot(payload)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+
+@app.put("/api/plots/{plot_id}")
+def edit_plot(plot_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    from app.api import plot_store
+    try:
+        return plot_store.update_plot(plot_id, payload)
+    except KeyError:
+        raise HTTPException(404, f"Khong tim thay vuon id {plot_id}")
+
+@app.delete("/api/plots/{plot_id}")
+def remove_plot(plot_id: int) -> dict[str, str]:
+    from app.api import plot_store
+    plot_store.delete_plot(plot_id)
+    return {"status": "deleted", "plot_id": str(plot_id)}
+
 @app.get("/api/dashboard/slots")
 def get_dashboard_slots(
     location: str = "Dong Thap",
@@ -1545,7 +1572,6 @@ def get_dashboard_slots(
         forecast_df = fetch_forecast(lat=lat, lon=lon, days=1)
         if not forecast_df.empty and "soil_moisture_0_to_7cm" in forecast_df.columns:
             sm_val = forecast_df["soil_moisture_0_to_7cm"].iloc[0]
-            import pandas as pd
             if pd.notna(sm_val):
                 current_soil_moisture = round(float(sm_val) * 100, 1)
     except Exception as e:
