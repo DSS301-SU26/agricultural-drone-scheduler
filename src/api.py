@@ -1531,10 +1531,25 @@ def get_dashboard_slots(
             if soil_reading:
                 if soil_reading.get("water_level_cm") is not None:
                     current_water_level = float(soil_reading["water_level_cm"])
+                # We will still load the mock, but overwrite it with real data below if available
                 if soil_reading.get("soil_moisture_percentage") is not None:
                     current_soil_moisture = float(soil_reading["soil_moisture_percentage"])
     except Exception as e:
         print(f"Error fetching soil readings: {e}")
+        
+    # Phương án 2: Lấy dữ liệu độ ẩm đất thực tế từ Open-Meteo API
+    try:
+        from app.ingestion.open_meteo import fetch_forecast
+        lat = location_df["latitude"].iloc[0]
+        lon = location_df["longitude"].iloc[0]
+        forecast_df = fetch_forecast(lat=lat, lon=lon, days=1)
+        if not forecast_df.empty and "soil_moisture_0_to_7cm" in forecast_df.columns:
+            sm_val = forecast_df["soil_moisture_0_to_7cm"].iloc[0]
+            import pandas as pd
+            if pd.notna(sm_val):
+                current_soil_moisture = round(float(sm_val) * 100, 1)
+    except Exception as e:
+        print(f"Lỗi khi lấy độ ẩm đất từ Open-Meteo: {e}")
     
     slots = run_3_layer_decision_engine(
         daily_df, thresholds, unsafe_weather_codes, farm_size_ha, distance_km,
