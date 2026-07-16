@@ -274,20 +274,13 @@ def override(decision_id: str, payload: dict[str, Any] = Body(...)) -> dict[str,
 
     sb = get_supabase()
     if sb is not None:
-        res = sb.table("flight_decision_log").select("is_user_overridden").eq("log_id", decision_id).execute()
-        if res.data and res.data[0].get("is_user_overridden"):
-            raise HTTPException(
-                status_code=409, 
-                detail="Khung giờ này đã được ghi đè trước đó. Không thể ghi đè trùng lặp để bảo đảm tính nhất quán của dữ liệu huấn luyện AI."
-            )
-            
         try:
-            sb.table("flight_decision_log").update({
+            sb.table("flight_decision_log").insert({
                 "system_decision": new_dec,
                 "is_user_overridden": was_overridden,
                 "override_reason": payload.get("user_notes", ""),
                 "xai_explanation": f"Override qua giao dien: {decision_id}",
-            }).eq("log_id", decision_id).execute()
+            }).execute()
         except Exception:
             pass
 

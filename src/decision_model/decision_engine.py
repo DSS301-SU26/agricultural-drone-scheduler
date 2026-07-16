@@ -311,9 +311,9 @@ def calculate_flyability_score(
     is_no_fly = False
     is_delay = False
     
-    if v_wind > max_w or v_gust > max_g or v_rain > thresholds.max_rain_hourly or v_rain_prob > 90 or v_weather in unsafe_weather_codes or v_vis < thresholds.min_visibility:
+    if v_wind > max_w or v_gust > max_g or v_rain > thresholds.max_rain_hourly or v_rain_prob > 90 or v_weather in unsafe_weather_codes:
         is_no_fly = True
-    elif v_temp > thresholds.max_safe_temperature or v_rain_prob > thresholds.max_rain_probability:
+    elif v_temp > thresholds.max_safe_temperature or v_vis < thresholds.min_visibility or v_rain_prob > thresholds.max_rain_probability:
         is_delay = True
         
     if is_no_fly:
@@ -388,7 +388,7 @@ def derive_decision_action(
         rain_washout = float(row.get("rain_washout_hours", 0))
 
     # 1. HARD LIMITS (NO_FLY)
-    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes or visibility < thresholds.min_visibility:
+    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes:
         return "NO_FLY"
 
     # 2. LOCK SPRAY
@@ -406,7 +406,7 @@ def derive_decision_action(
         return "LOCK_SPRAY"
 
     # 3. DELAY
-    if temp > thresholds.max_safe_temperature:
+    if temp > thresholds.max_safe_temperature or visibility < thresholds.min_visibility:
         return "DELAY"
 
     # 4. FLY

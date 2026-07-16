@@ -72,15 +72,11 @@ def _humidity(rh: float, temp: float, wind_kph: float, t: WeatherThresholds) -> 
     return FactorResult("humidity", v, round(rh, 0), msg)
 
 
-def _wind_speed(wind_kph: float, cfg: MissionConfig | None, t: WeatherThresholds) -> FactorResult:
+def _wind_speed(wind_kph: float, t: WeatherThresholds) -> FactorResult:
     if wind_kph > t.wind_stop_kph:
         v, msg = Verdict.STOP, f"Gio {wind_kph:.1f} km/h > {t.wind_stop_kph:.0f} km/h (5 m/s): tan xa hoa chat manh."
     elif wind_kph > t.wind_warn_kph:
-        mode = (cfg.nozzle_mode if cfg else None) or "COARSE"
-        if mode in {"COARSE", "MEDIUM"}:
-            v, msg = Verdict.ALLOW, f"Gio {wind_kph:.1f} km/h (3-5 m/s) nhung da dung giot {mode} an toan, DUOC PHEP BAY."
-        else:
-            v, msg = Verdict.WARN, f"Gio {wind_kph:.1f} km/h - chi bay khi dung giot trung binh-tho, tranh vung nhay cam."
+        v, msg = Verdict.WARN, f"Gio {wind_kph:.1f} km/h - chi bay khi dung giot trung binh-tho, tranh vung nhay cam."
     else:
         v, msg = Verdict.ALLOW, f"Gio {wind_kph:.1f} km/h ly tuong (<{t.wind_ideal_kph:.0f} km/h)."
     return FactorResult("wind_speed", v, round(wind_kph, 1), msg)
@@ -109,11 +105,11 @@ def _rain(precip_mm: float, rain_prob: float, weather_code: int, t: WeatherThres
     return FactorResult("rain", v, round(precip_mm, 1), msg)
 
 
-def _visibility(vis_m: float | None, t: WeatherThresholds) -> FactorResult:
-    if vis_m is not None and vis_m < t.visibility_stop_m:
+def _visibility(vis_m: float, t: WeatherThresholds) -> FactorResult:
+    if vis_m and vis_m < t.visibility_stop_m:
         return FactorResult("visibility", Verdict.STOP, round(vis_m, 0),
                             f"Tam nhin {vis_m:.0f}m < {t.visibility_stop_m:.0f}m: vi pham VLOS.")
-    return FactorResult("visibility", Verdict.ALLOW, round(vis_m, 0) if vis_m is not None else None,
+    return FactorResult("visibility", Verdict.ALLOW, round(vis_m, 0) if vis_m else None,
                         "Tam nhin dam bao VLOS.")
 
 
@@ -143,7 +139,7 @@ def evaluate_flight_rules(inp: RuleInput) -> RuleEvaluation:
     factors: list[FactorResult] = [
         _temperature(temp, rh, t),
         _humidity(rh, temp, wind, t),
-        _wind_speed(wind, inp.mission_config, t),
+        _wind_speed(wind, t),
         _gust(gust, wind, t),
         _rain(precip, rain_prob, wcode, t),
         _visibility(vis, t),

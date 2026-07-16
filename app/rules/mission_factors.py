@@ -47,11 +47,11 @@ def _wind_direction(weather: dict[str, Any], t: WeatherThresholds) -> FactorResu
 def _formulation(cfg: MissionConfig, pesticide: PesticideSpec | None) -> FactorResult:
     form = cfg.formulation or (pesticide.common_formulation if pesticide else None)
     if form in {"WP", "SC", "SG"}:
-        return FactorResult("formulation", Verdict.ALLOW, form,
-                            f"Dang {form}: hoa tan truoc, loc luoi & khuay lien tuc. DUOC PHEP BAY.")
+        return FactorResult("formulation", Verdict.WARN, form,
+                            f"Dang {form}: hoa tan truoc, loc luoi & khuay lien tuc tranh nghet bec (nuoc UAV it).")
     if form == "EC":
-        return FactorResult("formulation", Verdict.ALLOW, form,
-                            "Dang EC: dam bao nhu hoa on dinh. DUOC PHEP BAY.")
+        return FactorResult("formulation", Verdict.WARN, form,
+                            "Dang EC: dam bao nhu hoa on dinh, khong de tach lop trong binh nho.")
     return FactorResult("formulation", Verdict.ALLOW, form, "Dang thuoc phu hop phun UAV.")
 
 

@@ -1065,100 +1065,8 @@ def run_3_layer_decision_engine(
     for i in range(n):
         row = df.iloc[i]
         
-        # 1. Rule Engine evaluation (V2 Integration)
-        from app.rules.factors import evaluate_flight_rules, RuleInput, MissionConfig
-        from app.rules.context import DroneProfile, CropStage, PesticideSpec
-        from app.rules.thresholds import WeatherThresholds
-
-        t = WeatherThresholds(
-            temp_allow_min=20.0,
-            temp_allow_max=32.0,
-            temp_soft_max=34.0,
-            temp_stop=thresholds.max_safe_temperature,
-            wind_ideal_kph=10.8,
-            wind_warn_kph=10.8,
-            wind_stop_kph=thresholds.max_wind_speed,
-            gust_warn_kph=25.2,
-            rain_hourly_stop_mm=thresholds.max_rain_hourly,
-            rain_prob_warn_pct=50.0,
-            rain_prob_stop_pct=thresholds.max_rain_probability,
-            visibility_stop_m=thresholds.min_visibility,
-            unsafe_wmo_codes=frozenset(unsafe_weather_codes)
-        )
-
-        dp = DroneProfile(
-            model_name=drone_profile.get("model_name", "DJI_T30") if drone_profile else "DJI_T30",
-            max_wind_resistance_kph=float(drone_profile.get("max_wind_resistance_kph", thresholds.max_wind_speed)) if drone_profile else thresholds.max_wind_speed,
-            max_gust_resistance_kph=float(drone_profile.get("max_gust_resistance_kph", thresholds.max_wind_gust)) if drone_profile else thresholds.max_wind_gust,
-            tank_capacity_liters=int(drone_profile.get("tank_capacity_liters", 30)) if drone_profile else 30,
-            nozzle_technology=drone_profile.get("nozzle_technology", "PRESSURE") if drone_profile else "PRESSURE",
-            ingress_protection=drone_profile.get("ingress_protection", "IP67") if drone_profile else "IP67"
-        )
-        
-        cs = None
-        if crop_stage:
-            cs = CropStage(
-                stage_code=crop_stage.get("stage_code", "TILLERING"),
-                stage_name=crop_stage.get("stage_name", "De nhanh"),
-                kc_value=1.1,
-                opt_flight_alt_min=2.0, opt_flight_alt_max=2.5,
-                opt_flight_speed_min=5.0, opt_flight_speed_max=6.0,
-                flow_rate_min_l_ha=float(crop_stage.get("flow_rate_min_l_ha", 15.0)),
-                flow_rate_max_l_ha=float(crop_stage.get("flow_rate_max_l_ha", 25.0)),
-                awd_threshold_cm=float(crop_stage.get("awd_threshold_cm", -15.0)),
-                hard_ban_start_hour=int(crop_stage.get("hard_ban_start_hour")) if crop_stage.get("hard_ban_start_hour") is not None else (8 if crop_stage.get("stage_code") in ["BOOTING", "GRAIN_FILLING"] else None),
-                hard_ban_end_hour=int(crop_stage.get("hard_ban_end_hour")) if crop_stage.get("hard_ban_end_hour") is not None else (11 if crop_stage.get("stage_code") in ["BOOTING", "GRAIN_FILLING"] else None)
-            )
-
-        ps = None
-        if pesticide:
-            ps = PesticideSpec(
-                trade_name=pesticide.get("trade_name", ""),
-                active_ingredient=pesticide.get("active_ingredient", ""),
-                action_mechanism=pesticide.get("action_mechanism", "SYSTEMIC"),
-                common_formulation=pesticide.get("common_formulation", "WP"),
-                rain_washout_hours=int(pesticide.get("rain_washout_hours", 2)),
-                uv_sensitivity=bool(pesticide.get("uv_sensitivity", False))
-            )
-            
-        mcfg = MissionConfig(
-            formulation=ps.common_formulation if ps else "WP",
-            nozzle_mode="MEDIUM" if dp.nozzle_technology == "PRESSURE" else "COARSE"
-        )
-
-        try:
-            hour_val = int(row.get("hour"))
-        except:
-            hour_val = row.get("timestamp_dt").hour
-
-        rule_inp = RuleInput(
-            weather=row.to_dict(),
-            hour=hour_val,
-            drone=dp,
-            pesticide=ps,
-            crop_stage=cs,
-            mission_config=mcfg,
-            thresholds=t
-        )
-        
-        rule_eval = evaluate_flight_rules(rule_inp)
-        
-        # Backward-compatible mapping for LOCK_SPRAY
-        rule_action = rule_eval.decision.value
-        if rule_action == "NO_FLY":
-            hard_ban_factors = [f.factor for f in rule_eval.hard_blocking]
-            if "stage_time_ban" in hard_ban_factors or "pesticide_uv_temp_ban" in hard_ban_factors:
-                rule_action = "LOCK_SPRAY"
-
-        v2_xai_alert = " | ".join(f"{f.factor.upper()}: {f.message}" for f in rule_eval.factors if f.verdict != "ALLOW")
-        if not v2_xai_alert:
-            v2_xai_alert = "Thoi tiet va dieu kien nhiem vu deu ly tuong (ALLOW)."
-            
-        v2_factors_list = [
-            {"factor": f.factor, "status": f.verdict.value, "value": f.value, "message": f.message}
-            for f in rule_eval.factors
-        ]
-
+        # 1. Rule Engine evaluation
+        rule_action = derive_decision_action(row, thresholds, unsafe_weather_codes, drone_profile, crop_stage, pesticide)
         flyability_score = calculate_flyability_score(row, thresholds, unsafe_weather_codes, drone_profile)
         crop_impact_score = calculate_crop_safety_score(row, crop_stage, pesticide)
         
@@ -1263,11 +1171,11 @@ def run_3_layer_decision_engine(
             "challenger_conf": p_chall,
             "final_decision": final_decision,
             "risk_level": "LOW" if is_safe_to_fly else "HIGH",
-            "xai_alert": v2_xai_alert,
+            "xai_alert": build_recommendation_text(row, final_decision, thresholds, drone_profile, crop_stage, pesticide),
             "crop_impact_score": crop_impact_score,
             "spray_quality_score": spray_quality_score,
             "awd_recommendation": awd_rec,
-            "factors": v2_factors_list,
+            "factors": compile_decision_factors(row, thresholds, drone_profile, crop_stage, pesticide),
             "resource_regressor": {
                 "flow_rate_l_ha": flow_rate_l_ha,
                 "total_liters": total_liters,
@@ -1971,12 +1879,6 @@ def override_decision(
         
     record = records[0]
     
-    if record.get("was_human_overridden") or record.get("is_user_overridden"):
-        raise HTTPException(
-            status_code=409,
-            detail="Khung giờ này đã được ghi đè trước đó. Không thể ghi đè trùng lặp để bảo đảm tính nhất quán của dữ liệu huấn luyện AI."
-        )
-    
     weather_snapshot = record.get("weather_snapshot", {})
     if was_human_overridden:
         if user_notes:
@@ -1985,92 +1887,6 @@ def override_decision(
         weather_snapshot.pop("user_override_notes", None)
         
     is_safe = (override_decision == "TAKE_OFF")
-    
-    if is_safe:
-        from app.rules.factors import evaluate_flight_rules, RuleInput, MissionConfig
-        from app.rules.context import DroneProfile, CropStage, PesticideSpec
-        from app.rules.thresholds import WeatherThresholds
-
-        config = read_decision_config()
-        thresholds, unsafe_weather_codes = config_to_engine_args(config)
-        
-        t = WeatherThresholds(
-            temp_allow_min=20.0, temp_allow_max=32.0, temp_soft_max=34.0, temp_stop=thresholds.max_safe_temperature,
-            wind_ideal_kph=10.8, wind_warn_kph=10.8, wind_stop_kph=thresholds.max_wind_speed,
-            gust_warn_kph=25.2, rain_hourly_stop_mm=thresholds.max_rain_hourly,
-            rain_prob_warn_pct=50.0, rain_prob_stop_pct=thresholds.max_rain_probability,
-            visibility_stop_m=thresholds.min_visibility, unsafe_wmo_codes=frozenset(unsafe_weather_codes)
-        )
-
-        drone_model = weather_snapshot.get("drone_model", "DJI_T30")
-        drone_prof_data = db.get_drone_profile(drone_model) or {}
-        dp = DroneProfile(
-            model_name=drone_prof_data.get("model_name", "DJI_T30"),
-            max_wind_resistance_kph=float(drone_prof_data.get("max_wind_resistance_kph", thresholds.max_wind_speed)),
-            max_gust_resistance_kph=float(drone_prof_data.get("max_gust_resistance_kph", thresholds.max_wind_gust)),
-            tank_capacity_liters=int(drone_prof_data.get("tank_capacity_liters", 30)),
-            nozzle_technology=drone_prof_data.get("nozzle_technology", "PRESSURE"),
-            ingress_protection=drone_prof_data.get("ingress_protection", "IP67")
-        )
-        
-        crop_stage_name = weather_snapshot.get("crop_stage", "TILLERING")
-        crop_prof_data = db.get_crop_profile(crop_stage_name) or {}
-        cs = CropStage(
-            stage_code=crop_prof_data.get("stage_code", "TILLERING"),
-            stage_name=crop_prof_data.get("stage_name", "De nhanh"),
-            kc_value=1.1,
-            opt_flight_alt_min=2.0, opt_flight_alt_max=2.5,
-            opt_flight_speed_min=5.0, opt_flight_speed_max=6.0,
-            flow_rate_min_l_ha=float(crop_prof_data.get("flow_rate_min_l_ha", 15.0)),
-            flow_rate_max_l_ha=float(crop_prof_data.get("flow_rate_max_l_ha", 25.0)),
-            awd_threshold_cm=float(crop_prof_data.get("awd_threshold_cm", -15.0)),
-            hard_ban_start_hour=8 if crop_prof_data.get("stage_code") in ["BOOTING", "GRAIN_FILLING"] else None,
-            hard_ban_end_hour=11 if crop_prof_data.get("stage_code") in ["BOOTING", "GRAIN_FILLING"] else None
-        )
-        
-        pesticide_name = weather_snapshot.get("pesticide", "Tricyclazole")
-        pest_prof_data = db.get_pesticide_profile(pesticide_name) if hasattr(db, "get_pesticide_profile") else {}
-        if not pest_prof_data and hasattr(db, "get_all_pesticides"):
-            pest_prof_data = next((p for p in db.get_all_pesticides() if p.get("trade_name") == pesticide_name), {})
-            
-        ps = PesticideSpec(
-            trade_name=pest_prof_data.get("trade_name", ""),
-            active_ingredient=pest_prof_data.get("active_ingredient", ""),
-            action_mechanism=pest_prof_data.get("action_mechanism", "SYSTEMIC"),
-            common_formulation=pest_prof_data.get("common_formulation", "WP"),
-            rain_washout_hours=int(pest_prof_data.get("rain_washout_hours", 2)),
-            uv_sensitivity=bool(pest_prof_data.get("uv_sensitivity", False))
-        )
-        
-        mcfg = MissionConfig(
-            formulation=ps.common_formulation, 
-            nozzle_mode="MEDIUM" if dp.nozzle_technology == "PRESSURE" else "COARSE"
-        )
-
-        try:
-            hour_val = int(weather_snapshot.get("hour", 12))
-        except:
-            timestamp_str = weather_snapshot.get("timestamp")
-            if timestamp_str:
-                hour_val = pd.to_datetime(timestamp_str).hour
-            else:
-                hour_val = 12
-
-        rule_inp = RuleInput(
-            weather=weather_snapshot,
-            hour=hour_val, drone=dp, pesticide=ps, crop_stage=cs,
-            mission_config=mcfg, thresholds=t
-        )
-        
-        rule_eval = evaluate_flight_rules(rule_inp)
-        
-        if len(rule_eval.hard_blocking) > 0:
-            reasons = " | ".join([f"{f.factor}: {f.message}" for f in rule_eval.hard_blocking])
-            raise HTTPException(
-                status_code=423,
-                detail=f"Không thể ghi đè lệnh khóa cứng để đảm bảo an toàn tính mạng và thiết bị. Lý do: {reasons}"
-            )
-
     update_data = {
         "final_decision": override_decision,
         "was_human_overridden": was_human_overridden,
@@ -2190,19 +2006,7 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     if is_safe:
         row_series = pd.Series(weather)
         config = read_decision_config()
-        thresholds, unsafe_weather_codes = config_to_engine_args(config)
-        
-        from src.decision_model.decision_engine import derive_decision_action
-        system_action = derive_decision_action(
-            row_series, thresholds=thresholds, unsafe_weather_codes=unsafe_weather_codes,
-            drone_profile=drone_prof, crop_stage=crop_prof
-        )
-        if system_action == "NO_FLY":
-            raise HTTPException(
-                status_code=423,
-                detail="Không thể ghi đè lệnh khóa cứng để đảm bảo an toàn tính mạng và thiết bị"
-            )
-            
+        thresholds, _ = config_to_engine_args(config)
         flow_rate_l_ha = calculate_dynamic_flow_rate(row_series, thresholds, crop_prof)
         total_liters = round(flow_rate_l_ha * 10.0, 2)
         tank_cap = float(drone_prof.get("tank_capacity_liters", 30))
