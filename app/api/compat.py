@@ -308,8 +308,8 @@ def override(decision_id: str, payload: dict[str, Any] = Body(...)) -> dict[str,
 def override_generic(id: str = None, payload: Any = Body(default=None)) -> dict[str, Any]:
     if payload is None:
         payload = {}
-    if isinstance(payload, str):
-        payload = {"id": payload}
+    if not isinstance(payload, dict):
+        payload = {"id": str(payload)}
         
     record_id = payload.get("id") or id
     reason_str = payload.get("reason") or ""

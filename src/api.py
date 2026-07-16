@@ -1971,8 +1971,8 @@ def post_decision_override(id: str = None, payload: Any = Body(default=None)) ->
     import math
     if payload is None:
         payload = {}
-    if isinstance(payload, str):
-        payload = {"id": payload}
+    if not isinstance(payload, dict):
+        payload = {"id": str(payload)}
         
     record_id = payload.get("id") or id
     reason_str = payload.get("reason") or ""
