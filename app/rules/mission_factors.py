@@ -60,29 +60,29 @@ def _water_ph(cfg: MissionConfig) -> FactorResult:
         return FactorResult("water_ph", Verdict.ALLOW, None, "Chua do pH - khuyen nghi pha pH 5.5-6.5.")
     ph = cfg.water_ph
     if ph > 7.5 or ph < 5.0:
-        return FactorResult("water_ph", Verdict.STOP_SPRAY, ph,
-                            f"Độ pH {ph:.1f} nằm ngoài phổ an toàn (5-7.5): Thuốc dễ bị thủy phân mất tác dụng. Vui lòng pha thêm chất đệm.")
+        return FactorResult("water_ph", Verdict.STOP, ph,
+                            f"pH {ph:.1f} ngoai an toan (5-7.5) - thuoc de thuy phan. Chinh pH truoc khi phun.")
     if not (5.5 <= ph <= 6.5):
-        return FactorResult("water_ph", Verdict.WARN, ph, f"Độ pH {ph:.1f} hơi lệch khỏi vùng tối ưu 5.5-6.5.")
-    return FactorResult("water_ph", Verdict.ALLOW, ph, f"Độ pH {ph:.1f} tối ưu.")
+        return FactorResult("water_ph", Verdict.WARN, ph, f"pH {ph:.1f} lech vung toi uu 5.5-6.5.")
+    return FactorResult("water_ph", Verdict.ALLOW, ph, f"pH {ph:.1f} toi uu.")
 
 
 def _adjuvant(cfg: MissionConfig) -> FactorResult:
     if cfg.adjuvant_used and not cfg.adjuvant_compatible:
-        return FactorResult("adjuvant", Verdict.STOP_SPRAY, "incompatible",
-                            "Chất trợ lực chưa được xác minh tương thích: Nguy cơ phá nhũ tương hoặc gây cháy lá cây.")
+        return FactorResult("adjuvant", Verdict.STOP, "incompatible",
+                            "Chat tro luc chua ro tuong thich - nguy co pha nhu/chay la. Jar-test truoc.")
     if cfg.adjuvant_used:
-        return FactorResult("adjuvant", Verdict.ALLOW, "compatible", "Chất trợ lực tương thích tốt.")
-    return FactorResult("adjuvant", Verdict.ALLOW, "none", "Không sử dụng chất trợ lực.")
+        return FactorResult("adjuvant", Verdict.ALLOW, "compatible", "Chat tro luc tuong thich nhan.")
+    return FactorResult("adjuvant", Verdict.ALLOW, "none", "Khong dung chat tro luc.")
 
 
 def _nozzle(cfg: MissionConfig, weather: dict[str, Any], t: WeatherThresholds) -> FactorResult:
     wind = float(weather.get("wind_speed_10m", 0) or 0)
     mode = cfg.nozzle_mode or ("COARSE" if wind > t.wind_warn_kph else "MEDIUM")
     if wind > t.wind_warn_kph and mode == "FINE":
-        return FactorResult("nozzle", Verdict.STOP_SPRAY, mode,
-                            f"Gió {wind:.1f} km/h: Chống chỉ định dùng béc phun sương mịn (FINE) vì gió sẽ cuốn trôi toàn bộ thuốc.")
-    return FactorResult("nozzle", Verdict.ALLOW, mode, f"Cấu hình giọt '{mode}' phù hợp với gió {wind:.1f} km/h.")
+        return FactorResult("nozzle", Verdict.STOP, mode,
+                            f"Gio {wind:.1f} km/h ma dung giot sieu min - tan xa manh. Chuyen giot trung binh-tho.")
+    return FactorResult("nozzle", Verdict.ALLOW, mode, f"Cau hinh giot '{mode}' phu hop gio {wind:.1f} km/h.")
 
 
 def _canopy(cfg: MissionConfig, crop_stage: CropStage | None, weather: dict[str, Any]) -> FactorResult:

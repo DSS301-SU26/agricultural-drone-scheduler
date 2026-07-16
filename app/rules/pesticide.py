@@ -33,11 +33,12 @@ def evaluate_pesticide_timing(
         if temperature_c > thresholds.temp_abamectin_sun_stop:
             return FactorResult(
                 factor="pesticide_uv_timing",
-                verdict=Verdict.STOP_SPRAY,
+                verdict=Verdict.STOP,
                 value=hour,
                 message=(
-                    f"Hoạt chất {pesticide.active_ingredient} nhạy cảm UV: Cấm phun lúc {hour}h do nắng gắt "
-                    f"(Nhiệt độ {temperature_c:.1f}°C, Mây che {cloud_cover_pct:.0f}%). Hãy dời sang chiều mát."
+                    f"{pesticide.active_ingredient} nhay UV: cam phun {thresholds.uv_ban_start_hour}-"
+                    f"{thresholds.uv_ban_end_hour}h khi nhiet {temperature_c:.1f}°C, may {cloud_cover_pct:.0f}%. "
+                    "Doi chieu mat hoac may che phu >=80%."
                 ),
                 is_hard=False,
             )
@@ -46,8 +47,8 @@ def evaluate_pesticide_timing(
             verdict=Verdict.WARN,
             value=hour,
             message=(
-                f"Hoạt chất {pesticide.active_ingredient} nhạy UV: Đang trong khung giờ nắng gắt "
-                f"({thresholds.uv_ban_start_hour}-{thresholds.uv_ban_end_hour}h). Nên dời sang chiều để bảo toàn thuốc."
+                f"{pesticide.active_ingredient} nhay UV trong khung {thresholds.uv_ban_start_hour}-"
+                f"{thresholds.uv_ban_end_hour}h - nen doi chieu mat de bao toan hoat chat."
             ),
             is_hard=False,
         )
@@ -74,11 +75,11 @@ def evaluate_rain_washout(
     if rain_prob_next_hours_pct > thresholds.rain_prob_stop_pct:
         return FactorResult(
             factor="pesticide_rain_washout",
-            verdict=Verdict.STOP_SPRAY,
+            verdict=Verdict.STOP,
             value=round(rain_prob_next_hours_pct, 0),
             message=(
-                f"Thuốc {pesticide.active_ingredient} cần {pesticide.rain_washout_hours} giờ để ráo lá, "
-                f"nhưng xác suất mưa lên tới {rain_prob_next_hours_pct:.0f}%: Nguy cơ cao bị mưa rửa trôi hoàn toàn. BẮT BUỘC HOÃN PHUN."
+                f"{pesticide.active_ingredient} can rao la {pesticide.rain_washout_hours}h nhung "
+                f"xac suat mua {rain_prob_next_hours_pct:.0f}% - nguy co rua troi hoat chat. HOAN PHUN."
             ),
             is_hard=False,
         )
@@ -88,8 +89,8 @@ def evaluate_rain_washout(
             verdict=Verdict.WARN,
             value=round(rain_prob_next_hours_pct, 0),
             message=(
-                f"Xác suất mưa {rain_prob_next_hours_pct:.0f}% trong cửa sổ ráo lá "
-                f"{pesticide.rain_washout_hours} giờ: Cần theo dõi sát thời tiết."
+                f"Xac suat mua {rain_prob_next_hours_pct:.0f}% trong cua so rao la "
+                f"{pesticide.rain_washout_hours}h - can theo doi."
             ),
             is_hard=False,
         )
@@ -97,7 +98,7 @@ def evaluate_rain_washout(
         factor="pesticide_rain_washout",
         verdict=Verdict.ALLOW,
         value=round(rain_prob_next_hours_pct, 0),
-        message=f"Trời khô ráo trong cửa sổ {pesticide.rain_washout_hours} giờ, thuốc bám tốt.",
+        message=f"Kho mua trong cua so rao la {pesticide.rain_washout_hours}h.",
         is_hard=False,
     )
 

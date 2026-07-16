@@ -1143,7 +1143,12 @@ def run_3_layer_decision_engine(
         
         rule_eval = evaluate_flight_rules(rule_inp)
         
+        # Backward-compatible mapping for LOCK_SPRAY
         rule_action = rule_eval.decision.value
+        if rule_action == "NO_FLY":
+            hard_ban_factors = [f.factor for f in rule_eval.hard_blocking]
+            if "stage_time_ban" in hard_ban_factors or "pesticide_uv_temp_ban" in hard_ban_factors:
+                rule_action = "LOCK_SPRAY"
 
         v2_xai_alert = " | ".join(f"{f.factor.upper()}: {f.message}" for f in rule_eval.factors if f.verdict != "ALLOW")
         if not v2_xai_alert:
