@@ -1879,6 +1879,9 @@ def override_decision(
         
     record = records[0]
     
+    if record.get("was_human_overridden") and record.get("final_decision") == override_decision:
+        raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{override_decision}' rồi, không thể ghi đè lặp lại.")
+
     weather_snapshot = record.get("weather_snapshot", {})
     if was_human_overridden:
         if user_notes:
@@ -2037,8 +2040,18 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
             "override_reason": notes_part,
         }
         if record_id:
+            res_select = client.table("flight_decision_log").select("is_user_overridden, system_decision").eq("log_id", record_id).execute()
+            if res_select.data and len(res_select.data) > 0:
+                record = res_select.data[0]
+                if record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
+                    raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{mapped_decision}' rồi, không thể ghi đè lặp lại.")
             res_update = client.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
         else:
+            res_select = client.table("flight_decision_log").select("is_user_overridden, system_decision").eq("location_name", location).eq("slot_timestamp", timestamp).execute()
+            if res_select.data and len(res_select.data) > 0:
+                record = res_select.data[0]
+                if record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
+                    raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{mapped_decision}' rồi, không thể ghi đè lặp lại.")
             res_update = client.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
         
         if res_update.data:

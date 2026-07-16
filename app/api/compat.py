@@ -275,12 +275,20 @@ def override(decision_id: str, payload: dict[str, Any] = Body(...)) -> dict[str,
     sb = get_supabase()
     if sb is not None:
         try:
-            sb.table("flight_decision_log").insert({
+            res = sb.table("flight_decision_log").select("is_user_overridden, system_decision").eq("log_id", decision_id).execute()
+            if res.data and len(res.data) > 0:
+                record = res.data[0]
+                if record.get("is_user_overridden") and record.get("system_decision") == new_dec:
+                    raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{new_dec}' rồi, không thể ghi đè lặp lại cùng một trạng thái.")
+            
+            sb.table("flight_decision_log").update({
                 "system_decision": new_dec,
                 "is_user_overridden": was_overridden,
                 "override_reason": payload.get("user_notes", ""),
                 "xai_explanation": f"Override qua giao dien: {decision_id}",
-            }).execute()
+            }).eq("log_id", decision_id).execute()
+        except HTTPException:
+            raise
         except Exception:
             pass
 
@@ -323,9 +331,21 @@ def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
                 "override_reason": notes_part,
             }
             if record_id:
+                res = sb.table("flight_decision_log").select("is_user_overridden, system_decision").eq("log_id", record_id).execute()
+                if res.data and len(res.data) > 0:
+                    record = res.data[0]
+                    if record.get("is_user_overridden") and record.get("system_decision") == new_dec:
+                        raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{new_dec}' rồi, không thể ghi đè lặp lại.")
                 sb.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
             else:
+                res = sb.table("flight_decision_log").select("is_user_overridden, system_decision").eq("location_name", location).eq("slot_timestamp", timestamp).execute()
+                if res.data and len(res.data) > 0:
+                    record = res.data[0]
+                    if record.get("is_user_overridden") and record.get("system_decision") == new_dec:
+                        raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{new_dec}' rồi, không thể ghi đè lặp lại.")
                 sb.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
+        except HTTPException:
+            raise
         except Exception:
             pass
 
