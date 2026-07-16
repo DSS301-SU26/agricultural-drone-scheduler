@@ -2081,6 +2081,8 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                 "flyability_score": 1.0 if is_safe else 0.0,
                 "resource_regressor": resource_regressor,
             }
+    except HTTPException:
+        raise
     except Exception as e:
         print(f"Failed updating flight_decision_log (singular): {e}")
 
@@ -2116,6 +2118,8 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                     "flyability_score": 1.0 if is_safe else 0.0,
                     "resource_regressor": resource_regressor,
                 }
+    except HTTPException:
+        raise
     except Exception as ex:
         print(f"Failed updating flight_decisions_log (plural): {ex}")
 
