@@ -1967,9 +1967,14 @@ def override_decision(
 
 
 @app.post("/api/decision/override")
-def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def post_decision_override(id: str = None, payload: Any = Body(default=None)) -> dict[str, Any]:
     import math
-    record_id = payload.get("id")
+    if payload is None:
+        payload = {}
+    if isinstance(payload, str):
+        payload = {"id": payload}
+        
+    record_id = payload.get("id") or id
     reason_str = payload.get("reason", "")
     weather = payload.get("weather", {})
     timestamp = weather.get("timestamp")
@@ -1978,8 +1983,11 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     pesticide = payload.get("pesticide", "Tricyclazole")
     crop_stage = payload.get("crop_stage", "TILLERING")
 
+    is_restore = reason_str == "RESTORE" or payload.get("restore") is True or (not payload.get("reason") and record_id)
+
     # Split reason into decision and notes
     decision_part = "TAKE_OFF"
+
     notes_part = ""
     if ":" in reason_str:
         parts = reason_str.split(":", 1)
@@ -2040,11 +2048,13 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
     try:
         _OLD_TO_NEW = {"TAKE_OFF": "FLY", "DELAY_FLIGHT": "DELAY", "LOCK_SPRAY": "NO_FLY", "RETURN_TO_CHARGING": "NO_FLY", "FLY": "FLY", "DELAY": "DELAY", "NO_FLY": "NO_FLY"}
         mapped_decision = _OLD_TO_NEW.get(decision_part, "FLY")
+        
         update_data = {
             "system_decision": mapped_decision,
-            "is_user_overridden": True,
-            "override_reason": notes_part,
+            "is_user_overridden": False if is_restore else True,
+            "override_reason": "" if is_restore else notes_part,
         }
+        
         if record_id:
             res_select = client.table("flight_decision_log").select("*").eq("log_id", record_id).execute()
             if res_select.data and len(res_select.data) > 0:
@@ -2055,8 +2065,13 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                     gust = float(weather.get("wind_gusts_10m", 0))
                     if wind > 36.0 or gust > 36.0:
                         raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
-                if record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
+                
+                if not is_restore and record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
                     raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{mapped_decision}' rồi, không thể ghi đè lặp lại.")
+                    
+                if is_restore:
+                    update_data["system_decision"] = record.get("system_decision", mapped_decision)
+                    
             res_update = client.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
         else:
             res_select = client.table("flight_decision_log").select("*").eq("location_name", location).eq("slot_timestamp", timestamp).execute()
@@ -2068,17 +2083,22 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                     gust = float(weather.get("wind_gusts_10m", 0))
                     if wind > 36.0 or gust > 36.0:
                         raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
-                if record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
+                
+                if not is_restore and record.get("is_user_overridden") and record.get("system_decision") == mapped_decision:
                     raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{mapped_decision}' rồi, không thể ghi đè lặp lại.")
+                    
+                if is_restore:
+                    update_data["system_decision"] = record.get("system_decision", mapped_decision)
+                    
             res_update = client.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
         
         if res_update.data:
             return {
                 "status": "ok",
-                "final_decision": decision_part,
-                "was_human_overridden": True,
-                "is_safe_to_fly": is_safe,
-                "flyability_score": 1.0 if is_safe else 0.0,
+                "final_decision": update_data["system_decision"],
+                "was_human_overridden": not is_restore,
+                "is_safe_to_fly": update_data["system_decision"] in {"FLY", "TAKE_OFF"},
+                "flyability_score": 1.0 if update_data["system_decision"] in {"FLY", "TAKE_OFF"} else 0.0,
                 "resource_regressor": resource_regressor,
             }
     except HTTPException:
@@ -2100,18 +2120,21 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
                 gust = float(weather.get("wind_gusts_10m", 0))
                 if wind > 36.0 or gust > 36.0:
                     raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
-            if rec.get("was_human_overridden") and rec.get("final_decision") == decision_part:
+            if not is_restore and rec.get("was_human_overridden") and rec.get("final_decision") == decision_part:
                 raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{decision_part}' rồi, không thể ghi đè lặp lại.")
                 
             weather_snapshot = rec.get("weather_snapshot", {})
-            weather_snapshot["user_override_notes"] = notes_part
+            if not is_restore:
+                weather_snapshot["user_override_notes"] = notes_part
+            
+            final_dec = rec.get("system_decision", decision_part) if is_restore else decision_part
             
             update_data = {
-                "final_decision": decision_part,
-                "was_human_overridden": True,
+                "final_decision": final_dec,
+                "was_human_overridden": False if is_restore else True,
                 "weather_snapshot": weather_snapshot,
-                "is_safe_to_fly": is_safe,
-                "flyability_score": 1.0 if is_safe else 0.0,
+                "is_safe_to_fly": (final_dec in {"TAKE_OFF", "FLY"}),
+                "flyability_score": 1.0 if (final_dec in {"TAKE_OFF", "FLY"}) else 0.0,
             }
             if record_id:
                 res_update = client.table("flight_decisions_log").update(update_data).eq("id", record_id).execute()
@@ -2121,10 +2144,10 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
             if res_update.data:
                 return {
                     "status": "ok",
-                    "final_decision": decision_part,
-                    "was_human_overridden": True,
-                    "is_safe_to_fly": is_safe,
-                    "flyability_score": 1.0 if is_safe else 0.0,
+                    "final_decision": final_dec,
+                    "was_human_overridden": not is_restore,
+                    "is_safe_to_fly": update_data["is_safe_to_fly"],
+                    "flyability_score": update_data["flyability_score"],
                     "resource_regressor": resource_regressor,
                 }
     except HTTPException:

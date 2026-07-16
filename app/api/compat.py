@@ -305,7 +305,13 @@ def override(decision_id: str, payload: dict[str, Any] = Body(...)) -> dict[str,
 
 
 @router.post("/api/decision/override")
-def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def override_generic(id: str = None, payload: Any = Body(default=None)) -> dict[str, Any]:
+    if payload is None:
+        payload = {}
+    if isinstance(payload, str):
+        payload = {"id": payload}
+        
+    record_id = payload.get("id") or id
     reason_str = payload.get("reason", "")
     weather = payload.get("weather", {})
     timestamp = weather.get("timestamp")
@@ -313,7 +319,8 @@ def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     drone_model = payload.get("drone_model", "DJI_T30")
     pesticide = payload.get("pesticide")
     crop_stage = payload.get("crop_stage")
-    record_id = payload.get("id")
+    
+    is_restore = reason_str == "RESTORE" or payload.get("restore") is True or (not payload.get("reason") and record_id)
 
     decision_part = "TAKE_OFF"
     notes_part = ""
@@ -335,8 +342,8 @@ def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         try:
             update_data = {
                 "system_decision": new_dec,
-                "is_user_overridden": True,
-                "override_reason": notes_part,
+                "is_user_overridden": False if is_restore else True,
+                "override_reason": "" if is_restore else notes_part,
             }
             if record_id:
                 res_select = sb.table("flight_decision_log").select("*").eq("log_id", record_id).execute()
@@ -348,8 +355,10 @@ def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
                         gust = float(weather.get("wind_gusts_10m", 0))
                         if wind > 36.0 or gust > 36.0:
                             raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
-                    if record.get("is_user_overridden") and record.get("system_decision") == new_dec:
+                    if not is_restore and record.get("is_user_overridden") and record.get("system_decision") == new_dec:
                         raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{new_dec}' rồi, không thể ghi đè lặp lại.")
+                    if is_restore:
+                        update_data["system_decision"] = record.get("system_decision", new_dec)
                 sb.table("flight_decision_log").update(update_data).eq("log_id", record_id).execute()
             else:
                 res_select = sb.table("flight_decision_log").select("*").eq("location_name", location).eq("slot_timestamp", timestamp).execute()
@@ -361,20 +370,23 @@ def override_generic(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
                         gust = float(weather.get("wind_gusts_10m", 0))
                         if wind > 36.0 or gust > 36.0:
                             raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
-                    if record.get("is_user_overridden") and record.get("system_decision") == new_dec:
+                    if not is_restore and record.get("is_user_overridden") and record.get("system_decision") == new_dec:
                         raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{new_dec}' rồi, không thể ghi đè lặp lại.")
+                    if is_restore:
+                        update_data["system_decision"] = record.get("system_decision", new_dec)
                 sb.table("flight_decision_log").update(update_data).eq("location_name", location).eq("slot_timestamp", timestamp).execute()
         except HTTPException:
             raise
         except Exception:
             pass
 
+    final_ret = update_data.get("system_decision", new_dec) if is_restore else decision_part
     return {
         "status": "ok",
-        "final_decision": decision_part,
-        "was_human_overridden": True,
-        "is_safe_to_fly": (decision_part == "TAKE_OFF"),
-        "flyability_score": 1.0 if decision_part == "TAKE_OFF" else 0.0,
+        "final_decision": final_ret,
+        "was_human_overridden": not is_restore,
+        "is_safe_to_fly": (final_ret in {"TAKE_OFF", "FLY"}),
+        "flyability_score": 1.0 if (final_ret in {"TAKE_OFF", "FLY"}) else 0.0,
         "resource_regressor": {
             "flow_rate_l_ha": 20.0 if decision_part == "TAKE_OFF" else 0.0,
             "total_liters": 200.0 if decision_part == "TAKE_OFF" else 0.0,
