@@ -1975,13 +1975,13 @@ def post_decision_override(id: str = None, payload: Any = Body(default=None)) ->
         payload = {"id": payload}
         
     record_id = payload.get("id") or id
-    reason_str = payload.get("reason", "")
-    weather = payload.get("weather", {})
-    timestamp = weather.get("timestamp")
-    location = payload.get("location") or weather.get("location_name") or "Dong Thap"
-    drone_model = payload.get("drone_model", "DJI_T30")
-    pesticide = payload.get("pesticide", "Tricyclazole")
-    crop_stage = payload.get("crop_stage", "TILLERING")
+    reason_str = payload.get("reason") or ""
+    weather = payload.get("weather") or {}
+    timestamp = weather.get("timestamp") if isinstance(weather, dict) else None
+    location = payload.get("location") or (weather.get("location_name") if isinstance(weather, dict) else None) or "Dong Thap"
+    drone_model = payload.get("drone_model") or "DJI_T30"
+    pesticide = payload.get("pesticide") or "Tricyclazole"
+    crop_stage = payload.get("crop_stage") or "TILLERING"
 
     is_restore = reason_str == "RESTORE" or payload.get("restore") is True or (not payload.get("reason") and record_id)
 

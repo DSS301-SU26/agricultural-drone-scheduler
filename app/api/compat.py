@@ -312,11 +312,11 @@ def override_generic(id: str = None, payload: Any = Body(default=None)) -> dict[
         payload = {"id": payload}
         
     record_id = payload.get("id") or id
-    reason_str = payload.get("reason", "")
-    weather = payload.get("weather", {})
-    timestamp = weather.get("timestamp")
-    location = payload.get("location") or weather.get("location_name") or "Dong Thap"
-    drone_model = payload.get("drone_model", "DJI_T30")
+    reason_str = payload.get("reason") or ""
+    weather = payload.get("weather") or {}
+    timestamp = weather.get("timestamp") if isinstance(weather, dict) else None
+    location = payload.get("location") or (weather.get("location_name") if isinstance(weather, dict) else None) or "Dong Thap"
+    drone_model = payload.get("drone_model") or "DJI_T30"
     pesticide = payload.get("pesticide")
     crop_stage = payload.get("crop_stage")
     
