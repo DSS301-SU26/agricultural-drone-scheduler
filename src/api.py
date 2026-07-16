@@ -2094,6 +2094,15 @@ def post_decision_override(payload: dict[str, Any] = Body(...)) -> dict[str, Any
         
         if res_select.data:
             rec = res_select.data[0]
+            if not rec.get("was_human_overridden") and rec.get("final_decision") == "NO_FLY":
+                weather = rec.get("weather_snapshot") or rec.get("weather_json") or {}
+                wind = float(weather.get("wind_speed_10m", 0))
+                gust = float(weather.get("wind_gusts_10m", 0))
+                if wind > 36.0 or gust > 36.0:
+                    raise HTTPException(status_code=403, detail="Hệ thống đã ban hành lệnh CẤM BAY (NO_FLY) do gió vượt giới hạn vật lý của Drone (>36km/h). Trạng thái này bị KHÓA CỨNG.")
+            if rec.get("was_human_overridden") and rec.get("final_decision") == decision_part:
+                raise HTTPException(status_code=409, detail=f"Đã ghi đè trạng thái '{decision_part}' rồi, không thể ghi đè lặp lại.")
+                
             weather_snapshot = rec.get("weather_snapshot", {})
             weather_snapshot["user_override_notes"] = notes_part
             
