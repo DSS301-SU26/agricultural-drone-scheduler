@@ -47,82 +47,82 @@ def _f(weather: dict[str, Any], key: str, default: float = 0.0) -> float:
 
 def _temperature(temp: float, rh: float, t: WeatherThresholds) -> FactorResult:
     if temp >= t.temp_stop:
-        v, msg = Verdict.STOP, f"Nhiet {temp:.1f}°C >= {t.temp_stop:.0f}°C: soc nhiet + boc hoi thuoc."
+        v, msg = Verdict.STOP_SPRAY, f"Nhiệt độ {temp:.1f}°C vượt ngưỡng {t.temp_stop:.0f}°C: Sốc nhiệt làm cháy lá và bốc hơi thuốc nhanh."
     elif temp > t.temp_allow_max:
         if temp <= t.temp_soft_max and rh >= t.rh_allow_min:
-            v, msg = Verdict.WARN, f"Nhiet {temp:.1f}°C hoi cao nhung RH {rh:.0f}% du bu - canh bao mem."
+            v, msg = Verdict.WARN, f"Nhiệt độ {temp:.1f}°C hơi cao nhưng độ ẩm {rh:.0f}% đủ bù đắp."
         else:
-            v, msg = Verdict.WARN, f"Nhiet {temp:.1f}°C vuot {t.temp_allow_max:.0f}°C - rui ro boc hoi giot."
+            v, msg = Verdict.WARN, f"Nhiệt độ {temp:.1f}°C vượt {t.temp_allow_max:.0f}°C: Rủi ro bốc hơi giọt thuốc."
     elif temp < t.temp_allow_min:
-        v, msg = Verdict.WARN, f"Nhiet {temp:.1f}°C thap (<{t.temp_allow_min:.0f}°C) - hap thu thuoc luu dan kem, hao pin."
+        v, msg = Verdict.WARN, f"Nhiệt độ {temp:.1f}°C quá thấp: Cây hấp thụ thuốc lưu dẫn kém."
     else:
-        v, msg = Verdict.ALLOW, f"Nhiet {temp:.1f}°C trong vung toi uu {t.temp_allow_min:.0f}-{t.temp_allow_max:.0f}°C."
+        v, msg = Verdict.ALLOW, f"Nhiệt độ {temp:.1f}°C lý tưởng."
     return FactorResult("temperature", v, round(temp, 1), msg)
 
 
 def _humidity(rh: float, temp: float, wind_kph: float, t: WeatherThresholds) -> FactorResult:
     if rh > t.rh_high_stop:
-        v, msg = Verdict.STOP, f"RH {rh:.0f}% > {t.rh_high_stop:.0f}%: suong day pha loang thuoc, u benh nam."
+        v, msg = Verdict.STOP_SPRAY, f"Độ ẩm {rh:.0f}% > {t.rh_high_stop:.0f}%: Sương mù đặc làm loãng thuốc, dễ ủ bệnh nấm."
     elif rh < t.rh_low_stop and (temp > t.temp_allow_max or wind_kph > t.wind_warn_kph):
-        v, msg = Verdict.STOP, f"RH {rh:.0f}% < {t.rh_low_stop:.0f}% kem nhiet cao/gio - giot mit co lai truoc khi cham la."
+        v, msg = Verdict.STOP_SPRAY, f"Độ ẩm {rh:.0f}% < {t.rh_low_stop:.0f}% (Quá khô): Giọt thuốc co lại và bay hơi trước khi chạm lá."
     elif rh < t.rh_allow_min or rh > t.rh_allow_max:
-        v, msg = Verdict.WARN, f"RH {rh:.0f}% ngoai vung toi uu {t.rh_allow_min:.0f}-{t.rh_allow_max:.0f}%."
+        v, msg = Verdict.WARN, f"Độ ẩm {rh:.0f}% nằm ngoài ngưỡng tối ưu."
     else:
-        v, msg = Verdict.ALLOW, f"RH {rh:.0f}% trong vung toi uu."
+        v, msg = Verdict.ALLOW, f"Độ ẩm {rh:.0f}% lý tưởng."
     return FactorResult("humidity", v, round(rh, 0), msg)
 
 
 def _wind_speed(wind_kph: float, cfg: MissionConfig | None, t: WeatherThresholds) -> FactorResult:
     if wind_kph > t.wind_stop_kph:
-        v, msg = Verdict.STOP, f"Gio {wind_kph:.1f} km/h > {t.wind_stop_kph:.0f} km/h (5 m/s): tan xa hoa chat manh."
+        v, msg = Verdict.STOP_SPRAY, f"Gió {wind_kph:.1f} km/h vượt ngưỡng: Gây phát tán hóa chất mạnh sang các mương, ruộng lân cận."
     elif wind_kph > t.wind_warn_kph:
         mode = (cfg.nozzle_mode if cfg else None) or "COARSE"
         if mode in {"COARSE", "MEDIUM"}:
-            v, msg = Verdict.ALLOW, f"Gio {wind_kph:.1f} km/h (3-5 m/s) nhung da dung giot {mode} an toan, DUOC PHEP BAY."
+            v, msg = Verdict.ALLOW, f"Gió {wind_kph:.1f} km/h (Mức trung bình) nhưng béc phun {mode} đủ lớn để đảm bảo an toàn."
         else:
-            v, msg = Verdict.WARN, f"Gio {wind_kph:.1f} km/h - chi bay khi dung giot trung binh-tho, tranh vung nhay cam."
+            v, msg = Verdict.WARN, f"Gió {wind_kph:.1f} km/h: Cần dùng béc phun hạt to để tránh trôi thuốc."
     else:
-        v, msg = Verdict.ALLOW, f"Gio {wind_kph:.1f} km/h ly tuong (<{t.wind_ideal_kph:.0f} km/h)."
+        v, msg = Verdict.ALLOW, f"Gió {wind_kph:.1f} km/h lý tưởng."
     return FactorResult("wind_speed", v, round(wind_kph, 1), msg)
 
 
 def _gust(gust_kph: float, wind_kph: float, t: WeatherThresholds) -> FactorResult:
     # Chenh lech gio giat lon -> canh bao ha do cao (khong hard o day; hard nam o drone_limits)
     if gust_kph > t.gust_warn_kph:
-        v, msg = Verdict.WARN, f"Gio giat {gust_kph:.1f} km/h cao - rui ro mat on dinh RTK, ha do cao an toan."
+        v, msg = Verdict.WARN, f"Gió giật {gust_kph:.1f} km/h: Rủi ro mất ổn định đường bay RTK, cần hạ độ cao."
     else:
-        v, msg = Verdict.ALLOW, f"Gio giat {gust_kph:.1f} km/h trong nguong on dinh."
+        v, msg = Verdict.ALLOW, f"Gió giật {gust_kph:.1f} km/h trong ngưỡng ổn định."
     return FactorResult("wind_gust", v, round(gust_kph, 1), msg)
 
 
 def _rain(precip_mm: float, rain_prob: float, weather_code: int, t: WeatherThresholds) -> FactorResult:
     if precip_mm > t.rain_hourly_stop_mm:
-        v, msg = Verdict.STOP, f"Mua {precip_mm:.1f} mm/h > {t.rain_hourly_stop_mm:.0f}: rua troi thuoc, chap mach - RTB."
+        v, msg = Verdict.STOP, f"Mưa lớn {precip_mm:.1f} mm/h: Chập mạch thiết bị drone và rửa trôi toàn bộ thuốc."
     elif weather_code in t.unsafe_wmo_codes:
-        v, msg = Verdict.STOP, f"Ma thoi tiet nguy hiem ({weather_code}): mua/dong/suong mu."
+        v, msg = Verdict.STOP, f"Cảnh báo mã thời tiết ({weather_code}): Bão / Mưa dông / Sương mù dày."
     elif rain_prob > t.rain_prob_stop_pct:
-        v, msg = Verdict.STOP, f"Xac suat mua {rain_prob:.0f}% > {t.rain_prob_stop_pct:.0f}%: khoa khoi tao nhiem vu."
+        v, msg = Verdict.STOP_SPRAY, f"Xác suất mưa {rain_prob:.0f}% quá cao: Nguy cơ rửa trôi thuốc ngay sau khi phun."
     elif rain_prob > t.rain_prob_warn_pct:
-        v, msg = Verdict.WARN, f"Xac suat mua {rain_prob:.0f}% - theo doi sat, chuan bi hoan."
+        v, msg = Verdict.WARN, f"Xác suất mưa {rain_prob:.0f}%: Cần theo dõi sát sao, chuẩn bị hoãn chuyến."
     else:
-        v, msg = Verdict.ALLOW, f"Kho rao, xac suat mua {rain_prob:.0f}%."
+        v, msg = Verdict.ALLOW, f"Trời tạnh ráo, xác suất mưa thấp ({rain_prob:.0f}%)."
     return FactorResult("rain", v, round(precip_mm, 1), msg)
 
 
 def _visibility(vis_m: float | None, t: WeatherThresholds) -> FactorResult:
     if vis_m is not None and vis_m < t.visibility_stop_m:
         return FactorResult("visibility", Verdict.STOP, round(vis_m, 0),
-                            f"Tam nhin {vis_m:.0f}m < {t.visibility_stop_m:.0f}m: vi pham VLOS.")
+                            f"Tầm nhìn {vis_m:.0f}m < {t.visibility_stop_m:.0f}m: Mất tầm nhìn an toàn (VLOS).")
     return FactorResult("visibility", Verdict.ALLOW, round(vis_m, 0) if vis_m is not None else None,
-                        "Tam nhin dam bao VLOS.")
+                        "Tầm nhìn quang đãng, đảm bảo VLOS.")
 
 
 def _cloud_cover(cloud_pct: float, pesticide: PesticideSpec | None, t: WeatherThresholds) -> FactorResult:
     # May 80-100% = khung vang cho thuoc sinh hoc nhay UV
     if pesticide and pesticide.uv_sensitivity and cloud_pct >= t.cloud_bio_golden_min:
         return FactorResult("cloud_cover", Verdict.ALLOW, round(cloud_pct, 0),
-                            f"May {cloud_pct:.0f}% - khung vang bao toan hoat chat sinh hoc {pesticide.active_ingredient}.")
-    return FactorResult("cloud_cover", Verdict.ALLOW, round(cloud_pct, 0), f"May che phu {cloud_pct:.0f}%.")
+                            f"Mây che phủ {cloud_pct:.0f}%: Thời điểm vàng cho thuốc sinh học {pesticide.active_ingredient}.")
+    return FactorResult("cloud_cover", Verdict.ALLOW, round(cloud_pct, 0), f"Mây che phủ {cloud_pct:.0f}%.")
 
 
 # --- Ham gop chinh ----------------------------------------------------------

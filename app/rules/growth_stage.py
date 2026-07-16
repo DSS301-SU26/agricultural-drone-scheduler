@@ -43,19 +43,19 @@ def evaluate_stage_time_ban(hour: int, stage: CropStage) -> FactorResult | None:
     if stage.hard_ban_start_hour <= hour < stage.hard_ban_end_hour:
         return FactorResult(
             factor="stage_time_ban",
-            verdict=Verdict.STOP,
+            verdict=Verdict.STOP_SPRAY,
             value=hour,
             message=(
-                f"Giai doan {stage.stage_name}: CAM BAY {stage.hard_ban_start_hour:02d}h-"
-                f"{stage.hard_ban_end_hour:02d}h (lua phoi mau thu phan, tranh downwash "
-                "lam rung phan hoa gay lep hat)."
+                f"Lúa đang ở giai đoạn {stage.stage_name}: BẮT BUỘC KHÓA PHUN từ {stage.hard_ban_start_hour:02d}h đến "
+                f"{stage.hard_ban_end_hour:02d}h. Đây là lúc lúa phơi màu thụ phấn, sức gió từ cánh quạt (downwash) "
+                "sẽ thổi bay phấn hoa gây lép hạt diện rộng."
             ),
-            is_hard=True,
+            is_hard=False,
         )
     return FactorResult(
         factor="stage_time_ban",
         verdict=Verdict.ALLOW,
         value=hour,
-        message=f"Ngoai khung cam bay cua giai doan {stage.stage_name}.",
-        is_hard=True,
+        message=f"Khung giờ an toàn, không vi phạm thời gian thụ phấn của giai đoạn {stage.stage_name}.",
+        is_hard=False,
     )

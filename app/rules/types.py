@@ -12,23 +12,26 @@ from enum import Enum
 
 class Verdict(str, Enum):
     """Ket qua danh gia mot tac nhan don le."""
-    ALLOW = "ALLOW"   # nam trong vung DUOC PHEP BAY
-    WARN = "WARN"     # canh bao mem -> gop thanh DELAY
-    STOP = "STOP"     # roi vao cot PHAI DUNG BAY -> NO_FLY
+    ALLOW = "ALLOW"             # nam trong vung DUOC PHEP BAY
+    WARN = "WARN"               # canh bao mem -> gop thanh DELAY
+    STOP_SPRAY = "STOP_SPRAY"   # khoa phun do yeu to nong hoc -> LOCK_SPRAY
+    STOP = "STOP"               # roi vao cot PHAI DUNG BAY -> NO_FLY
 
 
 class Decision(str, Enum):
     """Quyet dinh cuoi cung cua DSS (BRD taxonomy)."""
     FLY = "FLY"
     DELAY = "DELAY"
+    LOCK_SPRAY = "LOCK_SPRAY"
     NO_FLY = "NO_FLY"
 
 
 # Muc do nghiem trong de gop verdict -> decision
-_SEVERITY = {Verdict.ALLOW: 0, Verdict.WARN: 1, Verdict.STOP: 2}
+_SEVERITY = {Verdict.ALLOW: 0, Verdict.WARN: 1, Verdict.STOP_SPRAY: 2, Verdict.STOP: 3}
 _VERDICT_TO_DECISION = {
     Verdict.ALLOW: Decision.FLY,
     Verdict.WARN: Decision.DELAY,
+    Verdict.STOP_SPRAY: Decision.LOCK_SPRAY,
     Verdict.STOP: Decision.NO_FLY,
 }
 
@@ -40,7 +43,7 @@ class FactorResult:
     verdict: Verdict
     value: float | str | None
     message: str           # giai thich ngan (phuc vu XAI)
-    is_hard: bool = False   # True neu la rao chan co hoc (Layer 1 hard rule)
+    is_hard: bool = False  # True neu la rao chan co hoc (Layer 1 hard rule)
 
 
 @dataclass
@@ -51,8 +54,8 @@ class RuleEvaluation:
 
     @property
     def blocking(self) -> list[FactorResult]:
-        """Cac tac nhan khien phai DUNG BAY (STOP)."""
-        return [f for f in self.factors if f.verdict is Verdict.STOP]
+        """Cac tac nhan khien phai DUNG BAY (STOP) hoac KHOA PHUN (STOP_SPRAY)."""
+        return [f for f in self.factors if f.verdict in (Verdict.STOP, Verdict.STOP_SPRAY)]
 
     @property
     def warnings(self) -> list[FactorResult]:
