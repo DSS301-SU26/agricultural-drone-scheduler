@@ -118,13 +118,37 @@ def add_plot(payload: dict[str, Any]) -> dict[str, Any]:
     _customs[int(plot_id)] = rec
     return _custom_to_out(rec)
 
+def _find_custom_plot_id(plot_id: str | int) -> int | None:
+    if isinstance(plot_id, int) or (isinstance(plot_id, str) and plot_id.isdigit()):
+        pid = int(plot_id)
+        if pid in _customs:
+            return pid
+    for pid, p in _customs.items():
+        if p["plot_name"] == str(plot_id) or str(pid) == str(plot_id):
+            return pid
+    return None
 
-def update_plot(plot_id: int, payload: dict[str, Any]) -> dict[str, Any]:
+
+def update_plot(plot_id: str | int, payload: dict[str, Any]) -> dict[str, Any]:
     _ensure_loaded()
-    if plot_id not in _customs:
-        raise KeyError(plot_id)
-    rec = _customs[plot_id]
-    for k in ("plot_name", "current_crop_stage"):
+    pid = _find_custom_plot_id(plot_id)
+    if pid is None:
+        lat, lon = 10.0, 105.0
+        for l in DELTA_LOCATIONS:
+            if l["name"] == str(plot_id) or str(plot_id).startswith("plot_"):
+                lat, lon = l["lat"], l["lon"]
+                break
+        
+        new_payload = {
+            "plot_name": str(plot_id) if not str(plot_id).startswith("plot_") else "Ruong " + str(plot_id),
+            "latitude": lat,
+            "longitude": lon,
+            **payload
+        }
+        return add_plot(new_payload)
+
+    rec = _customs[pid]
+    for k in ("plot_name", "current_crop_stage", "current_pesticide"):
         if k in payload:
             rec[k] = payload[k]
     for k in ("latitude", "longitude", "area_hectares"):
@@ -133,18 +157,21 @@ def update_plot(plot_id: int, payload: dict[str, Any]) -> dict[str, Any]:
     sb = get_supabase()
     if sb is not None:
         try:
-            sb.table("m_plots").update(rec).eq("plot_id", plot_id).execute()
+            sb.table("m_plots").update(rec).eq("plot_id", pid).execute()
         except Exception:
             pass
     return _custom_to_out(rec)
 
 
-def delete_plot(plot_id: int) -> None:
+def delete_plot(plot_id: str | int) -> None:
     _ensure_loaded()
-    _customs.pop(plot_id, None)
+    pid = _find_custom_plot_id(plot_id)
+    if pid is None:
+        return
+    _customs.pop(pid, None)
     sb = get_supabase()
     if sb is not None:
         try:
-            sb.table("m_plots").delete().eq("plot_id", plot_id).execute()
+            sb.table("m_plots").delete().eq("plot_id", pid).execute()
         except Exception:
             pass

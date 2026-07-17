@@ -164,7 +164,7 @@ def create_plot(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
 
 
 @app.put("/api/plots/{plot_id}")
-def edit_plot(plot_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def edit_plot(plot_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     try:
         return plot_store.update_plot(plot_id, payload)
     except KeyError:
@@ -172,7 +172,7 @@ def edit_plot(plot_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, An
 
 
 @app.delete("/api/plots/{plot_id}")
-def remove_plot(plot_id: int) -> dict[str, str]:
+def remove_plot(plot_id: str) -> dict[str, str]:
     plot_store.delete_plot(plot_id)
     return {"status": "deleted", "plot_id": str(plot_id)}
 
