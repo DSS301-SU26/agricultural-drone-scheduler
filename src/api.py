@@ -1497,7 +1497,7 @@ def create_plot(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         raise HTTPException(422, str(e))
 
 @app.put("/api/plots/{plot_id}")
-def edit_plot(plot_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+def edit_plot(plot_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
     from app.api import plot_store
     try:
         return plot_store.update_plot(plot_id, payload)
@@ -1505,7 +1505,7 @@ def edit_plot(plot_id: int, payload: dict[str, Any] = Body(...)) -> dict[str, An
         raise HTTPException(404, f"Khong tim thay vuon id {plot_id}")
 
 @app.delete("/api/plots/{plot_id}")
-def remove_plot(plot_id: int) -> dict[str, str]:
+def remove_plot(plot_id: str) -> dict[str, str]:
     from app.api import plot_store
     plot_store.delete_plot(plot_id)
     return {"status": "deleted", "plot_id": str(plot_id)}
