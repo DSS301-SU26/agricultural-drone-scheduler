@@ -67,3 +67,13 @@ class DecisionResponse(BaseModel):
     slots: list[SlotResponse]
     best_slot: SlotResponse | None
     awd: dict[str, Any] | None
+
+class FeedbackRequest(BaseModel):
+    mission_id: int | None = None
+    plot_id: int | None = None
+    weather_conditions: dict[str, Any]
+    status: str
+    is_user_overridden: bool = False
+    feedback_reason: str | None = None
+    flight_safety_score: float | None = None
+    system_decision: str | None = None

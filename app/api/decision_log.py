@@ -120,3 +120,32 @@ def recent_logs(limit: int = 100, location: str | None = None) -> list[dict[str,
         rows = [r for r in rows if r.get("location_name") == location]
     rows.sort(key=lambda r: str(r.get("slot_timestamp") or ""), reverse=True)
     return rows[:limit]
+
+
+def log_feedback(req: dict[str, Any]) -> None:
+    weather = req.get("weather_conditions", {})
+    row = {
+        "location_name": f"plot_{req.get('plot_id', 'unknown')}",
+        "slot_timestamp": weather.get("timestamp"),
+        "mission_id": req.get("mission_id"),
+        "system_decision": req.get("system_decision"),
+        "is_user_overridden": req.get("is_user_overridden", False),
+        "override_reason": req.get("feedback_reason"),
+        "flight_safety_score": req.get("flight_safety_score"),
+        "weather_json": {k: weather.get(k) for k in _WEATHER_KEYS if k in weather},
+        "feedback_status": req.get("status")
+    }
+    with _lock:
+        store = _load_local()
+        key = f"FB|{req.get('mission_id')}|{len(store)}"
+        store[key] = row
+        _save_local(store)
+    
+    sb = get_supabase()
+    if sb is None:
+        return
+    try:
+        # Just best-effort insert into log table
+        sb.table("flight_decision_log").insert(row).execute()
+    except Exception:
+        pass

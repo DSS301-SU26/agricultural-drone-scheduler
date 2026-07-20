@@ -28,7 +28,7 @@ def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
     params = {
         "latitude": location["latitude"],
         "longitude": location["longitude"],
-        "hourly": "temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,weather_code,evapotranspiration,soil_moisture_0_to_7cm",
+        "hourly": "temperature_2m,relative_humidity_2m,precipitation,precipitation_probability,cloud_cover,visibility,wind_speed_10m,wind_gusts_10m,weather_code,evapotranspiration",
         "timezone": "Asia/Ho_Chi_Minh",
         "forecast_days": min(days, 7)
     }
@@ -92,8 +92,7 @@ def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
                         "wind_gusts_10m": wind.get("gust", wind.get("speed", 0.0)) * 3.6,
                         "weather_code": weather.get("id", 800),
                         "weather_description": weather.get("description", ""),
-                        "evapotranspiration": 0.1, # fallback
-                        "soil_moisture_0_to_7cm": 0.25 # fallback
+                        "evapotranspiration": 0.1 # fallback
                     })
                 return pd.DataFrame(rows)
             except Exception as e:
@@ -125,8 +124,7 @@ def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
                 "wind_gusts_10m": wind * 1.3,
                 "weather_code": 1000 if hour < 12 else 1087,
                 "weather_description": "Clear" if hour < 12 else "Thundery",
-                "evapotranspiration": 0.05 + 0.02 * (hour / 24.0),
-                "soil_moisture_0_to_7cm": 0.3
+                "evapotranspiration": 0.05 + 0.02 * (hour / 24.0)
             })
         return pd.DataFrame(rows)
 
@@ -151,8 +149,7 @@ def fetch_one_location(location: dict, days: int = 3) -> pd.DataFrame:
             "wind_gusts_10m": hourly.get("wind_gusts_10m", [])[i],
             "weather_code": hourly.get("weather_code", [])[i],
             "weather_description": f"Code {hourly.get('weather_code', [])[i]}",
-            "evapotranspiration": hourly.get("evapotranspiration", [])[i],
-            "soil_moisture_0_to_7cm": hourly.get("soil_moisture_0_to_7cm", [])[i]
+            "evapotranspiration": hourly.get("evapotranspiration", [])[i]
         })
 
     df = pd.DataFrame(rows)

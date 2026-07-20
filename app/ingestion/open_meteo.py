@@ -5,7 +5,7 @@ Thu thap thoi tiet tu Open-Meteo (HM2 - Layer 1).
 - Du bao (live, theo GPS plot) de phuc vu   -> fetch_forecast()
 
 Cot output = chuan bang weather_hourly. So voi code cu, BO SUNG:
-et0_fao_evapotranspiration, wind_direction_10m, soil_moisture_0_to_7cm (cho AWD).
+et0_fao_evapotranspiration, wind_direction_10m (cho AWD).
 
 parse_hourly() tach rieng de test offline (khong can mang).
 """
@@ -25,7 +25,7 @@ HOURLY_FIELDS = [
     "temperature_2m", "relative_humidity_2m", "precipitation",
     "precipitation_probability", "cloud_cover", "visibility",
     "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
-    "weather_code", "et0_fao_evapotranspiration", "soil_moisture_0_to_7cm",
+    "weather_code", "et0_fao_evapotranspiration",
 ]
 
 # Cot chuan weather_hourly + soil (soil_moisture giu de dua sang soil_readings)
@@ -34,7 +34,7 @@ WEATHER_COLUMNS = [
     "temperature_2m", "relative_humidity_2m", "precipitation",
     "precipitation_probability", "cloud_cover", "visibility",
     "wind_speed_10m", "wind_gusts_10m", "wind_direction_10m",
-    "weather_code", "et0_fao_evapotranspiration", "soil_moisture_0_to_7cm",
+    "weather_code", "et0_fao_evapotranspiration",
     "source",
 ]
 

@@ -542,10 +542,9 @@ def serialize_slot(row: pd.Series, thresholds: DecisionThresholds) -> dict[str, 
         "crop_condition": str(row["crop_condition"]),
         "dynamic_flow_rate_pct": as_number(row["dynamic_flow_rate_pct"]),
         "decision_action": action,
-        "schedule_eligible": action == "TAKE_OFF",
+        "schedule_eligible": action == "FLY",
         "recommendation_text": build_recommendation_text(row, action, thresholds),
         "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
-        "soil_moisture": as_number(row.get("soil_moisture_0_to_7cm", 0.0), 2),
     }
 
 
@@ -555,7 +554,7 @@ def recommended_slots(
     thresholds: DecisionThresholds,
 ) -> list[dict[str, Any]]:
     upcoming = df[df["timestamp_dt"] >= reference_time].copy()
-    safe = upcoming[upcoming["decision_action"] == "TAKE_OFF"].copy()
+    safe = upcoming[upcoming["decision_action"] == "FLY"].copy()
     candidates = safe if not safe.empty else upcoming
     if candidates.empty:
         candidates = df.copy()
@@ -1080,9 +1079,17 @@ def run_3_layer_decision_engine(
         p_chall = float(chall_probs[i][0])
         chall_ai_pred = chall_preds[i]
         
-        # Determine the most conservative AI prediction
+        # Determine AI prediction (weighted average if both are safe, otherwise conservative)
         RISK_LEVELS = {"FLY": 0, "DELAY": 1, "LOCK_SPRAY": 2, "NO_FLY": 3}
-        worst_ai_pred = ai_pred if RISK_LEVELS.get(ai_pred, 0) >= RISK_LEVELS.get(chall_ai_pred, 0) else chall_ai_pred
+        
+        if RISK_LEVELS.get(ai_pred, 0) <= 1 and RISK_LEVELS.get(chall_ai_pred, 0) <= 1:
+            avg_prob = 0.6 * p_champ + 0.4 * p_chall
+            if avg_prob >= 0.5:
+                worst_ai_pred = "FLY"
+            else:
+                worst_ai_pred = "DELAY"
+        else:
+            worst_ai_pred = ai_pred if RISK_LEVELS.get(ai_pred, 0) >= RISK_LEVELS.get(chall_ai_pred, 0) else chall_ai_pred
         
         # Calibration: Force AI predictions to align with updated humidity threshold
         humidity = float(row.get("relative_humidity_2m", 0))
@@ -1593,19 +1600,6 @@ def get_dashboard_slots(
                     current_soil_moisture = float(soil_reading["soil_moisture_percentage"])
     except Exception as e:
         print(f"Error fetching soil readings: {e}")
-        
-    # Phương án 2: Lấy dữ liệu độ ẩm đất thực tế từ Open-Meteo API
-    try:
-        from app.ingestion.open_meteo import fetch_forecast
-        lat = location_df["latitude"].iloc[0]
-        lon = location_df["longitude"].iloc[0]
-        forecast_df = fetch_forecast(lat=lat, lon=lon, days=1)
-        if not forecast_df.empty and "soil_moisture_0_to_7cm" in forecast_df.columns:
-            sm_val = forecast_df["soil_moisture_0_to_7cm"].iloc[0]
-            if pd.notna(sm_val):
-                current_soil_moisture = round(float(sm_val) * 100, 1)
-    except Exception as e:
-        print(f"Lỗi khi lấy độ ẩm đất từ Open-Meteo: {e}")
     
     slots = run_3_layer_decision_engine(
         daily_df, thresholds, unsafe_weather_codes, farm_size_ha, distance_km,
@@ -1642,7 +1636,6 @@ def get_dashboard_slots(
                 "weather_code": int(row["weather_code"]),
                 "weather_description": str(row.get("weather_description", "")),
                 "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
-                "soil_moisture": current_soil_moisture,
                 "water_level_cm": current_water_level,
             },
             "decision_engine": {

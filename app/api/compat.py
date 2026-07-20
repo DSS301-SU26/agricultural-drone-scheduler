@@ -147,7 +147,8 @@ def dashboard_slots(background_tasks: BackgroundTasks,
     day_df = day_df[(day_df["ts"].dt.hour >= 6) & (day_df["ts"].dt.hour <= 17)].reset_index(drop=True)
 
     predictor = get_predictor()
-    drone = drone_store.resolve(drone_model)
+    all_drones = drone_store.list_drones()
+    main_drone = drone_store.resolve(drone_model)
     pest = get_pesticide(pesticide)
     stage = get_crop_stage(crop_stage)
     washout_hours = pest.rain_washout_hours if pest else 0
@@ -169,10 +170,60 @@ def dashboard_slots(background_tasks: BackgroundTasks,
         washout_prob = float(pd.to_numeric(
             day_df["precipitation_probability"].iloc[idx: idx + max(washout_hours, 1)],
             errors="coerce").fillna(0).max()) if pest else None
-        r = decide(weather=weather, drone=drone, predictor=predictor,
-                   hour=int(row["ts"].hour), pesticide=pest, crop_stage=stage,
-                   rain_prob_washout_window_pct=washout_prob,
-                   soil_water_level_cm=water).to_dict()
+            
+        drones_eval = {}
+        best_r = None
+        best_priority = -1
+        
+        # Priority mapping to find the "best" decision (FLY > DELAY > NO_FLY/LOCK_SPRAY)
+        decision_priority = {"FLY": 3, "DELAY": 2, "NO_FLY": 1, "LOCK_SPRAY": 1, "RETURN_TO_CHARGING": 1}
+
+        for d_dict in all_drones:
+            d = drone_store.resolve(d_dict["model_name"])
+            dr = decide(weather=weather, drone=d, predictor=predictor,
+                       hour=int(row["ts"].hour), pesticide=pest, crop_stage=stage,
+                       rain_prob_washout_window_pct=washout_prob,
+                       soil_water_level_cm=water).to_dict()
+            dr_action = _old_action(dr)
+            dr_priority = decision_priority.get(dr["decision"], 0)
+            
+            # Additional resource estimation per drone
+            dr_water_l_ha = (dr.get("spray_config") or {}).get("water_volume_l_ha", 0.0)
+            dr_total_liters = round(dr_water_l_ha * farm_size_ha, 1)
+            dr_sorties = math.ceil(dr_total_liters / d.tank_capacity_liters) if dr_total_liters else 0
+            dr_battery = dr_sorties + math.ceil(distance_km * 2 * 0.1)
+            
+            drones_eval[d.model_name] = {
+                "decision": dr["decision"],
+                "final_decision": dr_action,
+                "flyability_score": round(dr["flight_safety_score"] / 100, 3),
+                "is_safe_to_fly": dr["decision"] == "FLY",
+                "risk_level": {"FLY": "LOW", "DELAY": "MEDIUM", "NO_FLY": "HIGH"}.get(dr["decision"], "HIGH"),
+                "battery_cycles_needed": dr_battery,
+                "xai_alert": dr["xai_explanation"],
+                "opt_flight_config": {
+                    "alt_min": float(stage.opt_flight_alt_min) if stage else 2.0,
+                    "alt_max": float(stage.opt_flight_alt_max) if stage else 2.5,
+                    "speed_min": float(stage.opt_flight_speed_min) if stage else 5.0,
+                    "speed_max": float(stage.opt_flight_speed_max) if stage else 6.0,
+                    "nozzle_tech": str(d.nozzle_technology) if d else "PRESSURE",
+                    "awd_threshold_cm": float(stage.awd_threshold_cm) if stage else -15.0,
+                },
+                "resource_regressor": {
+                    "flow_rate_l_ha": dr_water_l_ha,
+                    "total_liters": dr_total_liters,
+                    "sorties": dr_sorties,
+                    "distance_to_field_km": distance_km,
+                    "battery_cycles_needed": dr_battery,
+                },
+            }
+            
+            # Determine if this is the best decision so far, or if tie, fallback to main_drone
+            if dr_priority > best_priority or (dr_priority == best_priority and d.model_name == main_drone.model_name):
+                best_r = dr
+                best_priority = dr_priority
+                
+        r = best_r
 
         log_rows.append(build_log_row(location, row["ts"].isoformat(), r, weather))
         
@@ -246,6 +297,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
                     "distance_to_field_km": distance_km,
                     "battery_cycles_needed": battery,
                 },
+                "drones_eval": drones_eval,
             },
         })
 

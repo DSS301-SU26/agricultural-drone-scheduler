@@ -1,10 +1,10 @@
               precision    recall  f1-score   support
 
-       DELAY       0.33      0.85      0.47      3346
-         FLY       0.97      0.71      0.82     20646
-  LOCK_SPRAY       1.00      1.00      1.00      6590
+       DELAY       0.36      0.81      0.50      2839
+         FLY       0.94      0.73      0.82     13836
+  LOCK_SPRAY       1.00      0.97      0.98     13907
       NO_FLY       1.00      1.00      1.00     15744
 
-    accuracy                           0.86     46326
-   macro avg       0.82      0.89      0.82     46326
-weighted avg       0.94      0.86      0.88     46326
+    accuracy                           0.90     46326
+   macro avg       0.82      0.88      0.82     46326
+weighted avg       0.94      0.90      0.91     46326

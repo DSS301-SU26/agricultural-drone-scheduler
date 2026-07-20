@@ -7,5 +7,5 @@
   "location_name": "Tien Giang",
   "timestamp": "2026-06-01 06:00:00",
   "flyability_score": 1.0,
-  "recommendation_text": "FLY: Điều kiện bay an toàn. Gió 1.1 km/h, nhiệt độ 24.4C, xác suất mưa 36%. Đề xuất lưu lượng xả 15.0 L/ha. Nâng độ cao bay 2.5-3m tránh hỏng mạ."
+  "recommendation_text": "Điều kiện bay an toàn — Gió 1.1 km/h (ngưỡng drone: 29 km/h), nhiệt độ 24.4°C, xác suất mưa chỉ 36%. Lúa giai đoạn Mạ: nên bay cao 2.5-3m và tốc độ nhanh để tránh downwash dập mạ non. Đề xuất lưu lượng xả 15.0 L/ha."
 }

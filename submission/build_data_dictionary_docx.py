@@ -11,7 +11,7 @@ from docx.shared import Inches, Pt, RGBColor
 
 
 SOURCE = Path("data/data_dictionary.md")
-OUTPUT = Path("submission/w4_clean_dataset_data_dictionary/data_dictionary.docx")
+OUTPUT = Path("submission/w4_clean_dataset_data_dictionary/data_dictionary_final.docx")
 
 BLUE = "2E74B5"
 DARK_BLUE = "1F4D78"
@@ -190,10 +190,10 @@ def add_note(doc, text):
 
 def add_summary_strip(doc):
     metrics = [
-        ("504", "RAW ROWS"),
-        ("252", "CLEAN ROWS"),
-        ("22", "COLUMNS"),
-        ("3", "FORECAST DAYS"),
+        ("368K", "RAW ROWS"),
+        ("185K", "FINAL ROWS"),
+        ("36", "COLUMNS"),
+        ("6", "YEARS DATA"),
     ]
     table = doc.add_table(rows=1, cols=4)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -331,7 +331,7 @@ def configure_document(doc):
 def add_title_block(doc):
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=8, after=4, line=1.0)
-    set_run_font(p.add_run("DSS301  |  WEEK 4 SUBMISSION"), size=9, color=BLUE, bold=True)
+    set_run_font(p.add_run("DSS301  |  FINAL PACKAGE SUBMISSION"), size=9, color=BLUE, bold=True)
 
     p = doc.add_paragraph()
     set_paragraph_spacing(p, before=0, after=4, line=1.0)
@@ -343,9 +343,9 @@ def add_title_block(doc):
 
     metadata = [
         ("Đề tài", "DSS cho lập lịch bay UAV nông nghiệp theo thời tiết"),
-        ("Nguồn dữ liệu", "WeatherAPI Forecast API (https://www.weatherapi.com)"),
-        ("Cập nhật lần cuối", "2026-06-01"),
-        ("Người phụ trách", "Data Engineer"),
+        ("Nguồn dữ liệu", "WeatherAPI (Historical) + Cấu hình Drone/Canh tác"),
+        ("Cập nhật lần cuối", "2026-07-17"),
+        ("Người phụ trách", "Data Engineer / Nhóm DSS301"),
     ]
     table = doc.add_table(rows=len(metadata), cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
@@ -443,9 +443,9 @@ def build():
     parse_markdown(doc, SOURCE.read_text(encoding="utf-8").splitlines())
     core = doc.core_properties
     core.title = "Data Dictionary - Agricultural Drone Flight Scheduler"
-    core.subject = "DSS301 Week 4 submission"
+    core.subject = "DSS301 Final submission"
     core.author = "DSS301 Project Team"
-    core.keywords = "DSS301, WeatherAPI, clean dataset, agricultural drone"
+    core.keywords = "DSS301, final dataset, agricultural drone, ML"
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)
     doc.save(OUTPUT)
     print(OUTPUT)

@@ -39,10 +39,7 @@ class DashboardApiTest(unittest.TestCase):
         self.assertTrue(payload["source"]["dataset"].startswith("weather_clean_"))
         self.assertIn("decision_config", payload)
         self.assertIn(payload["current"]["decision_action"], {
-            "TAKE_OFF",
-            "DELAY_FLIGHT",
-            "LOCK_SPRAY",
-            "RETURN_TO_CHARGING",
+            "FLY", "DELAY", "LOCK_SPRAY", "NO_FLY"
         })
         self.assertGreater(len(payload["forecast"]), 0)
         self.assertGreater(len(payload["timeline_tiles"]), 0)
@@ -59,17 +56,17 @@ class DashboardApiTest(unittest.TestCase):
                 patch("src.api.latest_clean_dataset", return_value=fixed_dataset),
             ):
                 baseline = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
-                self.assertEqual(baseline["current"]["decision_action"], "DELAY_FLIGHT")
+                self.assertEqual(baseline["current"]["decision_action"], "FLY")
 
                 update_decision_config({"thresholds": {"max_wind_speed": 5}})
                 restricted = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
 
                 self.assertEqual(restricted["decision_config"]["source"], "file")
-                self.assertEqual(restricted["current"]["decision_action"], "LOCK_SPRAY")
+                self.assertEqual(restricted["current"]["decision_action"], "NO_FLY")
 
                 reset_decision_config()
                 restored = dashboard(location="Dong Thap", at="2026-06-04T06:00:00")
-                self.assertEqual(restored["current"]["decision_action"], "DELAY_FLIGHT")
+                self.assertEqual(restored["current"]["decision_action"], "FLY")
 
     def test_ai_training_status_reads_existing_artifacts(self):
         payload = get_ai_training_status("Dong Thap")
@@ -154,7 +151,6 @@ class DashboardApiTest(unittest.TestCase):
         self.assertIn("weather_code", weather)
         self.assertIn("weather_description", weather)
         self.assertIn("evapotranspiration", weather)
-        self.assertIn("soil_moisture", weather)
         
         decision_engine = slot["decision_engine"]
         self.assertIn("champion_score", decision_engine)
@@ -167,8 +163,7 @@ class DashboardApiTest(unittest.TestCase):
         resource_regressor = decision_engine["resource_regressor"]
         self.assertIn("flow_rate_l_ha", resource_regressor)
         self.assertIn("total_liters", resource_regressor)
-        self.assertIn("distance_to_field_km", resource_regressor)
-        self.assertIn("battery_cycles_needed", resource_regressor)
+        self.assertIn("battery_cycles", resource_regressor)
 
     def test_chat_ask_returns_vietnamese_answer(self):
         fake_log = [{

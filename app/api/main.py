@@ -21,7 +21,7 @@ from . import drone_store, plot_store
 from .compat import router as compat_router
 from .decision_log import log_override, recent_logs
 from .deps import get_predictor, get_supabase
-from .schemas import DecisionRequest, DecisionResponse, OverrideRequest, DroneCreate
+from .schemas import DecisionRequest, DecisionResponse, OverrideRequest, DroneCreate, FeedbackRequest
 
 app = FastAPI(title="AgriFlight DSS API", version="1.0.0")
 app.add_middleware(
@@ -284,7 +284,7 @@ def override_decision(req: OverrideRequest) -> dict[str, Any]:
             w["wind_speed_10m"] = w["wind_speed"]
         if "wind_gusts_10m" not in w and "wind_gust" in w:
             w["wind_gusts_10m"] = w["wind_gust"]
-        for key in ["precipitation", "precipitation_probability", "cloud_cover", "visibility", "weather_code", "et0_fao_evapotranspiration", "soil_moisture_0_to_7cm", "temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_gusts_10m"]:
+        for key in ["precipitation", "precipitation_probability", "cloud_cover", "visibility", "weather_code", "et0_fao_evapotranspiration", "temperature_2m", "relative_humidity_2m", "wind_speed_10m", "wind_gusts_10m"]:
             if key not in w:
                 w[key] = 0.0
 
@@ -302,6 +302,17 @@ def override_decision(req: OverrideRequest) -> dict[str, Any]:
 
         log_override(result.to_dict(), req.weather, req.location)
         return result.to_dict()
+    except Exception as e:
+        import traceback
+        raise HTTPException(500, traceback.format_exc())
+
+
+@app.post("/api/decision/feedback")
+def submit_feedback(req: FeedbackRequest) -> dict[str, Any]:
+    try:
+        from .decision_log import log_feedback
+        log_feedback(req.dict())
+        return {"status": "success", "message": "Feedback saved for continuous learning."}
     except Exception as e:
         import traceback
         raise HTTPException(500, traceback.format_exc())

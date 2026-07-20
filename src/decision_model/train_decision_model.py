@@ -194,7 +194,7 @@ def train_models(dataset_path: Path) -> dict[str, object]:
         "inv_label_mapping": INV_LABEL_MAPPING,
         "evaluation_split": split_summary,
     }
-    joblib.dump(model_payload, MODEL_DIR / "drone_decision_model.joblib")
+    joblib.dump(model_payload, MODEL_DIR / "agriflight_model.joblib")
 
     metrics_df.to_csv(REPORT_DIR / "model_metrics.csv", index=False)
     
@@ -280,8 +280,9 @@ def main() -> None:
     parser.add_argument("--dataset", type=Path, default=DEFAULT_DATASET)
     args = parser.parse_args()
     result = train_models(args.dataset)
-    print(json.dumps(result, ensure_ascii=False, indent=2))
-
+    output_json = json.dumps(result, ensure_ascii=False, indent=2)
+    with open(MODEL_DIR / "evaluation_log.txt", "w", encoding="utf-8") as f:
+        f.write(output_json)
 
 if __name__ == "__main__":
     main()
