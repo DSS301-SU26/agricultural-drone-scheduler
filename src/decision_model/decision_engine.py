@@ -273,25 +273,31 @@ def calculate_flyability_score(
     v_weather = int(row.get("weather_code", 0))
     v_temp = float(row.get("temperature_2m", 0))
 
-    def get_factor(val, threshold, tolerance, is_max=True):
+    def get_factor(val, threshold, tolerance, is_max=True, optimal=0.0):
         if is_max:
-            if val <= threshold: return 1.0
+            if val <= optimal: return 1.0
             if val >= threshold + tolerance: return 0.0
-            return 1.0 - ((val - threshold) / tolerance)
+            if val <= threshold:
+                if threshold == optimal: return 1.0
+                return 1.0 - 0.2 * ((val - optimal) / (threshold - optimal))
+            return 0.8 - 0.8 * ((val - threshold) / tolerance)
         else:
-            if val >= threshold: return 1.0
+            if val >= optimal: return 1.0
             if val <= threshold - tolerance: return 0.0
-            return 1.0 - ((threshold - val) / tolerance)
+            if val >= threshold:
+                if optimal == threshold: return 1.0
+                return 0.8 + 0.2 * ((val - threshold) / (optimal - threshold))
+            return 0.8 * ((val - (threshold - tolerance)) / tolerance)
 
     factors = {
-        "wind": get_factor(v_wind, max_w, 10.0),
-        "gust": get_factor(v_gust, max_g, 15.0),
-        "rain": get_factor(v_rain, thresholds.max_rain_hourly, 5.0),
-        "rain_prob": get_factor(v_rain_prob, thresholds.max_rain_probability, 30.0),
-        "cloud": get_factor(v_cloud, thresholds.max_cloud_cover, 40.0),
-        "visibility": get_factor(v_vis, thresholds.min_visibility, thresholds.min_visibility, is_max=False),
+        "wind": get_factor(v_wind, max_w, 10.0, optimal=5.0),
+        "gust": get_factor(v_gust, max_g, 15.0, optimal=10.0),
+        "rain": get_factor(v_rain, thresholds.max_rain_hourly, 5.0, optimal=0.0),
+        "rain_prob": get_factor(v_rain_prob, thresholds.max_rain_probability, 30.0, optimal=10.0),
+        "cloud": get_factor(v_cloud, thresholds.max_cloud_cover, 40.0, optimal=20.0),
+        "visibility": get_factor(v_vis, thresholds.min_visibility, thresholds.min_visibility, is_max=False, optimal=10000.0),
         "weather": 0.0 if v_weather in unsafe_weather_codes else 1.0,
-        "temperature": get_factor(v_temp, thresholds.max_safe_temperature, 5.0),
+        "temperature": get_factor(v_temp, thresholds.max_safe_temperature, 5.0, optimal=25.0),
     }
 
     base_score = sum(factors[name] * weight for name, weight in SCORE_WEIGHTS.items())
