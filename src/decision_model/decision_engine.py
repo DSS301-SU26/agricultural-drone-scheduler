@@ -594,7 +594,20 @@ def build_recommendation_text(
         elif flyability_score is not None and flyability_score < 0.4:
             reasons.append("điều kiện vật lý tổng hợp vượt mức nguy hiểm (điểm an toàn bay xuống quá thấp)")
         elif not reasons:
-            reasons.append("dự báo rủi ro an toàn bay từ Mô hình AI ở mức cao (Dưới ngưỡng an toàn)")
+            borderline = []
+            if gust > drone_max_g * 0.8:
+                borderline.append(f"gió giật khá mạnh ({gust:.1f} km/h, tiệm cận ngưỡng {drone_max_g:.0f} km/h)")
+            if wind > drone_max_w * 0.8:
+                borderline.append(f"gió thổi đều ở mức cao ({wind:.1f} km/h)")
+            if temp > thresholds.max_safe_temperature * 0.9:
+                borderline.append(f"nhiệt độ oi bức ({temp:.1f}°C)")
+            if rain_prob >= 40:
+                borderline.append(f"rủi ro mưa tiềm ẩn ({rain_prob:.0f}%)")
+            
+            if borderline:
+                reasons.append("dự báo rủi ro cao từ Mô hình AI do sự kết hợp bất lợi của các yếu tố: " + ", ".join(borderline))
+            else:
+                reasons.append("dự báo rủi ro an toàn bay từ Mô hình AI ở mức cao (Dưới ngưỡng an toàn)")
 
         reason_text = ", ".join(reasons)
         return (
