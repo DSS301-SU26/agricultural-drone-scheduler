@@ -1528,9 +1528,12 @@ def get_dashboard_slots(
     farm_size_ha: float = 10.0,
     distance_km: float = 1.0,
     drone_model: str | None = None,
+    droneModel: str | None = None,
+    drone: str | None = None,
     pesticide: str | None = None,
     crop_stage: str | None = None,
 ) -> dict[str, Any]:
+    drone_model = drone_model or droneModel or drone
     source_path = latest_clean_dataset()
     config = read_decision_config()
     thresholds, unsafe_weather_codes = config_to_engine_args(config)
@@ -1620,11 +1623,25 @@ def get_dashboard_slots(
     except Exception as e:
         print(f"Reconciliation and auto-save failed: {e}")
         
+    all_drones = db.get_all_drones()
+        
     formatted_slots = []
     for s in slots:
         row = s["row"]
+        
+        capable_drones = []
+        for d in all_drones:
+            max_w = float(d.get("max_wind_resistance_kph", 28.8))
+            max_g = float(d.get("max_gust_resistance_kph", 35.0))
+            if float(row["wind_speed_10m"]) <= max_w and float(row["wind_gusts_10m"]) <= max_g:
+                capable_drones.append(d["model_name"])
+                
+        if not capable_drones:
+            capable_drones = ["Không có"]
+            
         formatted_slots.append({
             "id": s.get("id"),
+            "capable_drones": capable_drones,
             "was_human_overridden": s.get("was_human_overridden", False),
             "user_notes": s.get("user_notes", ""),
             "timestamp": row["timestamp_dt"].isoformat(),
