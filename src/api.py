@@ -543,7 +543,7 @@ def serialize_slot(row: pd.Series, thresholds: DecisionThresholds) -> dict[str, 
         "dynamic_flow_rate_pct": as_number(row["dynamic_flow_rate_pct"]),
         "decision_action": action,
         "schedule_eligible": action == "FLY",
-        "recommendation_text": build_recommendation_text(row, action, thresholds),
+        "recommendation_text": build_recommendation_text(row, action, thresholds, flyability_score=float(row.get("flyability_score", 1.0))),
         "evapotranspiration": as_number(row.get("evapotranspiration", 0.0), 2),
     }
 
@@ -804,7 +804,7 @@ def _auto_save_to_db(daily_df: pd.DataFrame, thresholds: DecisionThresholds) -> 
             "flyability_score": float(row["flyability_score"]),
             "dynamic_flow_rate_pct": float(row["dynamic_flow_rate_pct"]),
             "crop_condition": str(row["crop_condition"]),
-            "recommendation_text": build_recommendation_text(row, str(row["decision_action"]), thresholds),
+            "recommendation_text": build_recommendation_text(row, str(row["decision_action"]), thresholds, flyability_score=float(row.get("flyability_score", 1.0))),
             "weather_source": "api",
         })
         weather_rows.append({
@@ -1069,6 +1069,10 @@ def run_3_layer_decision_engine(
         flyability_score = calculate_flyability_score(row, thresholds, unsafe_weather_codes, drone_profile)
         crop_impact_score = calculate_crop_safety_score(row, crop_stage, pesticide)
         
+        # Enforce NO_FLY if the freshly calculated physical score is critically low
+        if flyability_score < 0.4 and rule_action != "NO_FLY":
+            rule_action = "NO_FLY"
+        
         flow_rate_l_ha = calculate_dynamic_flow_rate(row, thresholds, crop_stage)
         spray_quality_score = calculate_spray_quality_score(row, pesticide, flow_rate_l_ha)
         
@@ -1178,7 +1182,7 @@ def run_3_layer_decision_engine(
             "challenger_conf": p_chall,
             "final_decision": final_decision,
             "risk_level": "LOW" if is_safe_to_fly else "HIGH",
-            "xai_alert": build_recommendation_text(row, final_decision, thresholds, drone_profile, crop_stage, pesticide),
+            "xai_alert": build_recommendation_text(row, final_decision, thresholds, drone_profile, crop_stage, pesticide, flyability_score),
             "crop_impact_score": crop_impact_score,
             "spray_quality_score": spray_quality_score,
             "awd_recommendation": awd_rec,

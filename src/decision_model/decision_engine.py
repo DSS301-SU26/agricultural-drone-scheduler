@@ -394,8 +394,7 @@ def derive_decision_action(
         rain_washout = float(row.get("rain_washout_hours", 0))
 
     # 1. HARD LIMITS (NO_FLY)
-    fly_score = float(row.get("flyability_score", 1.0))
-    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes or fly_score < 0.4:
+    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes:
         return "NO_FLY"
 
     # 2. LOCK SPRAY
@@ -475,13 +474,14 @@ def apply_bootstrap_rule(df: pd.DataFrame) -> pd.DataFrame:
 
 def build_recommendation_text(
     row: pd.Series,
-    action: str | None = None,
-    thresholds: DecisionThresholds = THRESHOLDS,
+    action: str,
+    thresholds: DecisionThresholds,
     drone_profile: dict[str, Any] | None = None,
     crop_stage: dict[str, Any] | None = None,
     pesticide: dict[str, Any] | None = None,
+    flyability_score: float | None = None,
 ) -> str:
-    action = action or str(row.get("decision_action", "FLY"))
+    """Build a natural language explanation for the decision."""
     wind = float(row.get("wind_speed_10m", 0))
     gust = float(row.get("wind_gusts_10m", 0))
     rain_prob = float(row.get("precipitation_probability", 0))
@@ -591,6 +591,8 @@ def build_recommendation_text(
             reasons.append(f"mưa rất to, mưa rào mạnh (mã thời tiết {weather_code})")
         elif weather_code in [55, 63, 66, 73, 75, 77, 81]:
             reasons.append(f"mưa nặng hạt, thời tiết xấu (mã thời tiết {weather_code})")
+        elif flyability_score is not None and flyability_score < 0.4:
+            reasons.append("điều kiện vật lý tổng hợp vượt mức nguy hiểm (điểm an toàn bay xuống quá thấp)")
         elif not reasons:
             reasons.append("dự báo rủi ro an toàn bay từ Mô hình AI ở mức cao (Dưới ngưỡng an toàn)")
 
