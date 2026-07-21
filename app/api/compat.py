@@ -153,7 +153,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
     stage = get_crop_stage(crop_stage)
     washout_hours = pest.rain_washout_hours if pest else 0
     water = latest_water_level(1)
-    tank = drone.tank_capacity_liters
+    tank = main_drone.tank_capacity_liters
 
     slots = []
     log_rows: list[dict[str, Any]] = []
@@ -287,7 +287,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
                     "alt_max": float(stage.opt_flight_alt_max) if stage else 2.5,
                     "speed_min": float(stage.opt_flight_speed_min) if stage else 5.0,
                     "speed_max": float(stage.opt_flight_speed_max) if stage else 6.0,
-                    "nozzle_tech": str(drone.nozzle_technology) if drone else "PRESSURE",
+                    "nozzle_tech": str(main_drone.nozzle_technology) if main_drone else "PRESSURE",
                     "awd_threshold_cm": float(stage.awd_threshold_cm) if stage else -15.0,
                 },
                 "resource_regressor": {
@@ -307,7 +307,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
     return {"location": location, "date": str(day), "source": source,
             "slots": slots, "decision_config": _config_state,
             "selection": {
-                "drone_model": drone.model_name,
+                "drone_model": main_drone.model_name,
                 "pesticide": pest.active_ingredient if pest else None,
                 "pesticide_trade": pest.trade_name if pest else None,
                 "crop_stage": stage.stage_code if stage else None,
