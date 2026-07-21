@@ -394,7 +394,8 @@ def derive_decision_action(
         rain_washout = float(row.get("rain_washout_hours", 0))
 
     # 1. HARD LIMITS (NO_FLY)
-    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes:
+    fly_score = float(row.get("flyability_score", 1.0))
+    if wind > max_w or gust > max_g or rain > thresholds.max_rain_hourly or weather_code in unsafe_weather_codes or fly_score < 0.4:
         return "NO_FLY"
 
     # 2. LOCK SPRAY
