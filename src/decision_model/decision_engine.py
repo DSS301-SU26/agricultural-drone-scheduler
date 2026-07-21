@@ -591,23 +591,28 @@ def build_recommendation_text(
             reasons.append(f"mưa rất to, mưa rào mạnh (mã thời tiết {weather_code})")
         elif weather_code in [55, 63, 66, 73, 75, 77, 81]:
             reasons.append(f"mưa nặng hạt, thời tiết xấu (mã thời tiết {weather_code})")
-        elif flyability_score is not None and flyability_score < 0.4:
-            reasons.append("điều kiện vật lý tổng hợp vượt mức nguy hiểm (điểm an toàn bay xuống quá thấp)")
         elif not reasons:
             borderline = []
-            if gust > drone_max_g * 0.8:
-                borderline.append(f"gió giật khá mạnh ({gust:.1f} km/h, tiệm cận ngưỡng {drone_max_g:.0f} km/h)")
-            if wind > drone_max_w * 0.8:
-                borderline.append(f"gió thổi đều ở mức cao ({wind:.1f} km/h)")
-            if temp > thresholds.max_safe_temperature * 0.9:
-                borderline.append(f"nhiệt độ oi bức ({temp:.1f}°C)")
+            if gust > drone_max_g * 0.7:
+                borderline.append(f"gió giật {gust:.1f} km/h (ngưỡng {drone_max_g:.0f} km/h)")
+            elif wind > drone_max_w * 0.7:
+                borderline.append(f"gió thổi đều {wind:.1f} km/h (ngưỡng {drone_max_w:.0f} km/h)")
+            if temp > thresholds.max_safe_temperature * 0.85:
+                borderline.append(f"nhiệt độ cao {temp:.1f}°C")
             if rain_prob >= 40:
-                borderline.append(f"rủi ro mưa tiềm ẩn ({rain_prob:.0f}%)")
+                borderline.append(f"xác suất mưa {rain_prob:.0f}%")
+            if humidity > 85:
+                borderline.append(f"độ ẩm cao {humidity:.0f}%")
             
+            # Luôn hiện thông số cơ bản nếu điểm quá thấp
+            base_stats = f"Hiện tại: Gió giật {gust:.1f} km/h, Nhiệt độ {temp:.1f}°C, Mưa {rain_prob:.0f}%."
             if borderline:
-                reasons.append("dự báo rủi ro cao từ Mô hình AI do sự kết hợp bất lợi của các yếu tố: " + ", ".join(borderline))
+                reason_text = "sự kết hợp của các yếu tố bất lợi: " + ", ".join(borderline)
             else:
-                reasons.append("dự báo rủi ro an toàn bay từ Mô hình AI ở mức cao (Dưới ngưỡng an toàn)")
+                reason_text = "điều kiện tổng hợp vượt ngưỡng an toàn của mô hình AI"
+            
+            score_str = f" (điểm an toàn: {flyability_score*100:.0f}%)" if flyability_score is not None else ""
+            reasons.append(f"{reason_text}{score_str}. {base_stats}")
 
         reason_text = ", ".join(reasons)
         return (
