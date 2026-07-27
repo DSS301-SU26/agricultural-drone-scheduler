@@ -736,8 +736,10 @@ def dashboard(
 
     reference_time = parse_reference_time(at)
     current = pick_operational_slot(location_df, reference_time)
-    selected_date = reference_time.date() if not at else current["timestamp_dt"].date()
+    selected_date = current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
+    if daily_df.empty:
+        daily_df = location_df.sort_values("timestamp_dt").tail(24).copy()
     daily_df = daily_df.sort_values("timestamp_dt")
     current_payload = serialize_slot(current, thresholds)
 
@@ -986,6 +988,9 @@ def run_3_layer_decision_engine(
     pesticide: dict[str, Any] | None = None,
     current_water_level: float = -12.0,
 ) -> list[dict[str, Any]]:
+    if df.empty:
+        return []
+
     global MODEL_PAYLOAD
     if MODEL_PAYLOAD is None:
         load_model()
@@ -1557,8 +1562,10 @@ def get_dashboard_slots(
         
     reference_time = parse_reference_time(at)
     current = pick_operational_slot(location_df, reference_time)
-    selected_date = reference_time.date() if not at else current["timestamp_dt"].date()
+    selected_date = current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
+    if daily_df.empty:
+        daily_df = location_df.sort_values("timestamp_dt").tail(24).copy()
     daily_df = daily_df.sort_values("timestamp_dt")
 
     # Fetch DB configuration profiles
