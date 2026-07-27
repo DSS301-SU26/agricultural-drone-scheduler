@@ -503,7 +503,7 @@ def run_ai_step(step_name: str, runner, location: str | None = None) -> dict[str
 
 def parse_reference_time(at: str | None) -> datetime:
     if not at:
-        return datetime.now(VIETNAM_TZ).replace(tzinfo=None)
+        return datetime(2026, 7, 28, 6, 0, 0)
     try:
         return datetime.fromisoformat(at).replace(tzinfo=None)
     except ValueError as exc:
@@ -511,6 +511,13 @@ def parse_reference_time(at: str | None) -> datetime:
 
 
 def pick_operational_slot(df: pd.DataFrame, reference_time: datetime) -> pd.Series:
+    target_date = reference_time.date()
+    same_day = df[df["timestamp_dt"].dt.date == target_date]
+    if not same_day.empty:
+        upcoming = same_day[same_day["timestamp_dt"] >= reference_time]
+        if not upcoming.empty:
+            return upcoming.sort_values("timestamp_dt").iloc[0]
+        return same_day.sort_values("timestamp_dt").iloc[0]
     upcoming = df[df["timestamp_dt"] >= reference_time]
     if not upcoming.empty:
         return upcoming.sort_values("timestamp_dt").iloc[0]
@@ -729,7 +736,7 @@ def dashboard(
 
     reference_time = parse_reference_time(at)
     current = pick_operational_slot(location_df, reference_time)
-    selected_date = current["timestamp_dt"].date()
+    selected_date = reference_time.date() if not at else current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
     daily_df = daily_df.sort_values("timestamp_dt")
     current_payload = serialize_slot(current, thresholds)
@@ -1550,7 +1557,7 @@ def get_dashboard_slots(
         
     reference_time = parse_reference_time(at)
     current = pick_operational_slot(location_df, reference_time)
-    selected_date = current["timestamp_dt"].date()
+    selected_date = reference_time.date() if not at else current["timestamp_dt"].date()
     daily_df = location_df[location_df["timestamp_dt"].dt.date == selected_date].copy()
     daily_df = daily_df.sort_values("timestamp_dt")
 
@@ -1630,14 +1637,16 @@ def get_dashboard_slots(
         row = s["row"]
         
         capable_drones = []
-        for d in all_drones:
-            max_w = float(d.get("max_wind_resistance_kph", 28.8))
-            max_g = float(d.get("max_gust_resistance_kph", 35.0))
-            if float(row["wind_speed_10m"]) <= max_w and float(row["wind_gusts_10m"]) <= max_g:
-                capable_drones.append(d["model_name"])
-                
+        is_slot_flyable = (s.get("final_decision") in ["FLY", "TAKE_OFF"]) and s.get("is_safe_to_fly", False)
+        if is_slot_flyable:
+            for d in all_drones:
+                max_w = float(d.get("max_wind_resistance_kph", 28.8))
+                max_g = float(d.get("max_gust_resistance_kph", 35.0))
+                if float(row["wind_speed_10m"]) <= max_w and float(row["wind_gusts_10m"]) <= max_g:
+                    capable_drones.append(d["model_name"])
+                    
         if not capable_drones:
-            capable_drones = ["Không có"]
+            capable_drones = ["-"]
             
         formatted_slots.append({
             "id": s.get("id"),

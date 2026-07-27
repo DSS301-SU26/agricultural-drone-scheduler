@@ -20,6 +20,13 @@ if __name__ == "__main__":
     print("[2/3] Lam sach du lieu...")
     clean_pipeline(raw_path, save=True)
 
+    import shutil
+    src_clean_files = sorted(Path("src/data/clean").glob("weather_clean_*.csv"))
+    if src_clean_files:
+        data_clean_dir = Path("data/clean")
+        data_clean_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy(str(src_clean_files[-1]), str(data_clean_dir / src_clean_files[-1].name))
+
     print("[3/3] Upload len Supabase...")
     clean_files = sorted(Path("data/clean").glob("weather_clean_*.csv"))
     load_to_supabase(str(clean_files[-1]))

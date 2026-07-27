@@ -105,20 +105,20 @@ def _old_action(result_dict: dict[str, Any]) -> str:
 def _fetch_day(lat: float, lon: float) -> tuple[pd.DataFrame, str]:
     try:
         from ..ingestion.open_meteo import fetch_forecast
-        df = fetch_forecast(lat, lon, days=2)
+        df = fetch_forecast(lat, lon, days=3)
         if not df.empty:
             return df, "Open-Meteo forecast"
     except Exception:
         pass
     from ..ml.simulator import simulate
     import datetime
-    today = datetime.date.today()
+    target_date = datetime.date(2026, 7, 28)
     base_df = simulate(n=1)
     
     rows = []
     for h in range(6, 18):
         row = base_df.iloc[0].copy()
-        row["timestamp"] = pd.Timestamp(f"{today.isoformat()} {h:02d}:00:00")
+        row["timestamp"] = pd.Timestamp(f"{target_date.isoformat()} {h:02d}:00:00")
         # Jitter the temperature to simulate diurnal cycle
         if h < 13:
             row["temperature_2m"] = max(20, row["temperature_2m"] + (h - 5) * 0.8)
@@ -127,7 +127,7 @@ def _fetch_day(lat: float, lon: float) -> tuple[pd.DataFrame, str]:
         rows.append(row)
         
     df = pd.DataFrame(rows)
-    return df, "Du lieu mo phong (Hom nay)"
+    return df, "Du lieu mo phong (28/07/2026)"
 
 
 @router.get("/api/dashboard/slots")
@@ -140,10 +140,13 @@ def dashboard_slots(background_tasks: BackgroundTasks,
     if gps is None:
         raise HTTPException(404, f"Unknown location/plot '{location}'.")
 
+    import datetime
+    target_date = pd.to_datetime(at).date() if at else datetime.date(2026, 7, 28)
     df, source = _fetch_day(gps[0], gps[1])
     df["ts"] = pd.to_datetime(df["timestamp"])
-    day = df["ts"].dt.date.iloc[0]
-    day_df = df[df["ts"].dt.date == day].sort_values("ts").reset_index(drop=True)
+    day_df = df[df["ts"].dt.date == target_date].sort_values("ts").reset_index(drop=True)
+    if day_df.empty:
+        day_df = df[df["ts"].dt.date == df["ts"].dt.date.iloc[0]].sort_values("ts").reset_index(drop=True)
     day_df = day_df[(day_df["ts"].dt.hour >= 6) & (day_df["ts"].dt.hour <= 17)].reset_index(drop=True)
 
     predictor = get_predictor()
@@ -243,9 +246,18 @@ def dashboard_slots(background_tasks: BackgroundTasks,
         sorties = math.ceil(total_liters / tank) if total_liters else 0
         battery = sorties + math.ceil(distance_km * 2 * 0.1)
 
+        capable_drones = []
+        if is_fly and _old_action(r) not in ["NO_FLY", "LOCK_SPRAY", "RETURN_TO_CHARGING"]:
+            for d_name, d_eval in drones_eval.items():
+                if d_eval.get("is_safe_to_fly") and d_eval.get("decision") == "FLY":
+                    capable_drones.append(d_name)
+        if not capable_drones:
+            capable_drones = ["-"]
+
         wc = int(weather.get("weather_code") or 0)
         slots.append({
             "id": f"{location}::{ts_iso}",
+            "capable_drones": capable_drones,
             "was_human_overridden": was_overridden,
             "user_notes": user_notes,
             "timestamp": ts_iso,
@@ -304,7 +316,7 @@ def dashboard_slots(background_tasks: BackgroundTasks,
     # Ghi "hop den" ngam (best-effort, khong chan response)
     background_tasks.add_task(log_decisions, log_rows)
 
-    return {"location": location, "date": str(day), "source": source,
+    return {"location": location, "date": str(target_date), "source": source,
             "slots": slots, "decision_config": _config_state,
             "selection": {
                 "drone_model": main_drone.model_name,
